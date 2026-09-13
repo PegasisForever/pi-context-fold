@@ -1,0 +1,26 @@
+{
+  "name": "pi-context-fold",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "description": "Model-driven context folding for the Pi coding agent.",
+  "main": "dist/index.js",
+  "pi": { "extensions": ["./dist/index.js"] },
+  "engines": { "node": ">=22" },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "node --import tsx --test test/*.test.ts",
+    "build": "tsup"
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-coding-agent": "*",
+    "typebox": "*"
+  },
+  "devDependencies": {
+    "@earendil-works/pi-coding-agent": "0.85.1",
+    "@types/node": "^22.0.0",
+    "tsup": "^8.5.1",
+    "tsx": "^4.23.1",
+    "typescript": "^5.9.3"
+  }
+}
