@@ -93,5 +93,5 @@ function nudge(pi: ExtensionAPI, ctx: ExtensionContext, state: FoldState): void 
 function systemPrompt(sessionId: string): string {
 	return `### Context Management
 
-You manage your own context. When it grows large you will be notified to compact some of your context. Compacting replaces older parts of the conversation with summaries you write. Compacting keeps the context lean which helps you to perform better. The compacted range and the summary are yours to decide. \`compact()\` with no arguments lists what can be compacted. The transcript you have compacted is written to \`${blocksDir(sessionId)}/\` as plain text, one file per compaction. Search that folder when you encounter an ambiguity or have a question, the answer is usually already there.`;
+You manage your own context. When it grows large you will be notified to compact some of your context. Compacting replaces older parts of the conversation with summaries you write. Compacting keeps the context lean which helps you to perform better. The compacted range and the summary are yours to decide. \`compact()\` with no arguments lists what can be compacted. The transcript you have compacted is written to \`${blocksDir(sessionId)}/\` as plain text, one file per compaction. Search that directory when you encounter an ambiguity or have a question, the answer is usually already there.`;
 }

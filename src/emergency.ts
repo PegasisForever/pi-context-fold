@@ -100,10 +100,10 @@ function note(ctx: ExtensionContext, cut: Msg[], tokens: number, orphaned: FoldB
 			`This session overflowed its context window, so the older half was removed from view rather ` +
 			`than summarised. Those ${size} (~${shortTokens(tokens)} tokens) were written verbatim to ` +
 			`${path} — read or grep that file to retrieve any of it — or read the session log at ` +
-			`${ctx.sessionManager.getSessionFile()}, which still holds every original.`;
+			`${ctx.sessionManager.getSessionFile()}, which still holds every message.`;
 		if (orphaned.length === 0) return head;
 		return [
-			`${head} Summaries you wrote for folded spans in that half are reproduced below.`,
+			`${head} Summaries you wrote for compacted spans in that half are reproduced below.`,
 			...orphaned.map((block) => messageText(summaryMessage(block))),
 		].join("\n\n");
 	} catch (error) {

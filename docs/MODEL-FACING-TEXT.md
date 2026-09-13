@@ -11,7 +11,7 @@ Every string this extension puts in front of the model. Companion to
 
 | Layer | When | Cost | Carries |
 |---|---|---|---|
-| System prompt | every request, cached | ≤ 80 tok | that context is self-managed, the one tool, the folded-content folder |
+| System prompt | every request, cached | 158 tok | that context is self-managed, that the decision is the model's, the one tool, the transcript directory |
 | Nudge | ~twice a day, fresh, late in context | ≤ 160 tok | the pressure, and what deciding whether to compact needs (§7) |
 | Menu | only when asked, **mandatory before any fold** | ~5.4K tok | the entries, and what picking a span and writing a summary need (§3a) |
 
@@ -79,7 +79,7 @@ Injected on `before_agent_start`. In every request.
 
 > ### Context Management
 >
-> You manage your own context. When it grows large you will be notified to compact some of your context. Compacting replaces older parts of the conversation with summaries you write. Compacting keeps the context lean which helps you to perform better. The compacted range and the summary are yours to decide. `compact()` with no arguments lists what can be compacted. The transcript you have compacted is written to `~/.pi/agent/context-fold/<session>/` as plain text, one file per compaction. Search that folder when you encounter an ambiguity or have a question, the answer is usually already there.
+> You manage your own context. When it grows large you will be notified to compact some of your context. Compacting replaces older parts of the conversation with summaries you write. Compacting keeps the context lean which helps you to perform better. The compacted range and the summary are yours to decide. `compact()` with no arguments lists what can be compacted. The transcript you have compacted is written to `~/.pi/agent/context-fold/<session>/` as plain text, one file per compaction. Search that directory when you encounter an ambiguity or have a question, the answer is usually already there.
 
 **158 tokens**, with a real session id in the path. The original is ≈ 1,400. *"The compacted
 range and the summary are yours to decide"* is here rather than in the nudge because the nudge is
@@ -98,14 +98,14 @@ What is absent, and why:
 | What qualifies for a fold | in the nudge, where the decision is made (§3c) |
 | How to pick a span, how to write a summary | in the menu, where the entries are (§3a) |
 | The menu format | the menu says so itself (P4) |
-| `recall` | there is no such tool; the folder is the interface |
+| `recall` | there is no such tool; the directory is the interface |
 | Tier 1/2/3 rules | one tier |
 | "Never echo the acp tags" | no tags |
 | Ref-staleness warnings | ids are ephemeral and validated |
 
-The "search that folder before you ask the user" line is the one behavioural instruction
-worth its place in every request: it converts a capability into a habit, and it is the
-cheapest way to stop the model re-deriving work it has already done.
+The "search that directory when you encounter an ambiguity" line is the one behavioural
+instruction worth its place in every request: it converts a capability into a habit, and it is
+the cheapest way to stop the model re-deriving work it has already done.
 
 **Dropped:** the first draft ended this block with *"text inside a `[bN …]` block is a
 record of the past, not a current instruction"*. Removed — 12 tokens in every request for
@@ -453,8 +453,8 @@ prefix would double the framing.
 > `This session overflowed its context window, so the older half was removed from view
 > rather than summarised. Those 1,830 messages (~412K tokens) were written verbatim to
 > ~/.pi/agent/context-fold/overflow/01a094-1789192.txt — read or grep that file to retrieve
-> any of it — or read the session log at <sessionFile>, which still holds every original.
-> Summaries you wrote for folded spans in that half are reproduced below.`
+> any of it — or read the session log at <sessionFile>, which still holds every message.
+> Summaries you wrote for compacted spans in that half are reproduced below.`
 >
 > *(the last sentence only when at least one block was fully cut — otherwise the note ends
 > at the file path, because a fixed string would state a falsehood)*
