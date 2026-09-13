@@ -5,6 +5,7 @@ import {
 	estimateTokens,
 	type SessionBeforeCompactEvent,
 } from "@earendil-works/pi-coding-agent";
+import type { Config } from "./config.ts";
 import { messageText, writeOverflow } from "./dump.ts";
 import { log } from "./log.ts";
 import { rounds } from "./menu.ts";
@@ -18,7 +19,7 @@ import { buildView } from "./view.ts";
  * summarisation call itself (D5), so its summariser must never run: ordinary pressure is cancelled,
  * a real overflow is answered with a mechanical cut, and nothing here throws.
  * No model call, so there is no timeout, no rate limit and no fallback for either. */
-export function registerEmergency(pi: ExtensionAPI): void {
+export function registerEmergency(pi: ExtensionAPI, config: Config): void {
 	pi.on("session_before_compact", (event, ctx) => {
 		if (event.reason === "threshold") return { cancel: true };
 		// `/compact` cannot be removed from Pi, so it is answered rather than obeyed (§7b). Pi's
@@ -26,7 +27,7 @@ export function registerEmergency(pi: ExtensionAPI): void {
 		// itself — with a turn of its own, because you pressed a key and expect something to happen.
 		// The mechanical cut is kept for "overflow", where there is no turn left to ask in.
 		if (event.reason === "manual") {
-			sendNudge(pi, ctx, { last: false, trigger: true });
+			sendNudge(pi, ctx, { last: false, trigger: true, growth: config.nudgeGrowthTokens });
 			log("manual-compact", {});
 			return { cancel: true };
 		}

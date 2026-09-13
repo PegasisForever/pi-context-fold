@@ -393,8 +393,8 @@ model call on nothing.
 other message this extension sends is something the model must act on, and a report that looks
 like those gets acted on too.
 
-The 200K figure is interpolated from `NUDGE_GROWTH_TOKENS`, so the sentence cannot drift from
-the constant that produces it.
+The 200K figure is interpolated from the configured `nudgeGrowthTokens`, so the sentence cannot
+drift from the number that produces it — including when it is not 200K.
 
 ### 7a. The last nudge
 

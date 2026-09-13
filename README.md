@@ -75,8 +75,28 @@ not copy — so moving or deleting the directory breaks the install silently.
 
 ## Config
 
-None. There is no configuration file and no key to set. The three that once existed were
-never set by anybody, so they are constants in the source.
+One key, under `"pi-context-fold"` in pi's own `settings.json` — the same file
+`pi-powerline-footer` uses, so there is one file to edit, not one per extension. Two of them,
+shallow-merged, project over user:
+
+```
+~/.pi/agent/settings.json      everywhere
+<project>/.pi/settings.json    this project only
+```
+
+```jsonc
+// settings.json
+"pi-context-fold": {
+  // Nudge once the context has grown by this much since the last nudge. Absent means 200000.
+  // It also sets when the last nudge fires: when the window has less than this much room left.
+  "nudgeGrowthTokens": 200000
+}
+```
+
+That is the whole surface. It is the one number here that was measured on three days of one
+machine's sessions and never since, which is what earns it a key where nothing else has one. A
+typo, a wrong type or a number under 1000 stops the extension loading, with a message naming the
+key.
 
 Setting `PI_CODING_AGENT_DIR` moves everything this writes — the folded originals and the
 log — along with pi's own directory.
@@ -138,7 +158,7 @@ add"*.
 
 ## Size
 
-**1041 lines of source, 6 tests.** One tool, no config, no slash command.
+**1115 lines of source, 6 tests.** One tool, one config key, no slash command.
 
 The extension it replaces is ~9,950 lines. Roughly 250 mutations were run against this tree
 across seven review rounds; §17 records what each one changed.

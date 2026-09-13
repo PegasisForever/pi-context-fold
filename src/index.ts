@@ -1,9 +1,10 @@
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
+import { type Config, readConfig } from "./config.ts";
 import { blocksDir } from "./dump.ts";
 import { registerEmergency } from "./emergency.ts";
 import { type FoldState, registerFold } from "./fold.ts";
 import { log } from "./log.ts";
-import { NAME, NUDGE_GROWTH_TOKENS, sendNudge } from "./nudge.ts";
+import { NAME, sendNudge } from "./nudge.ts";
 import { projectSlots } from "./project.ts";
 import { labelled, type Shown } from "./shown.ts";
 import { liveBlocks } from "./state.ts";
@@ -12,6 +13,9 @@ import type { FoldBlock } from "./types.ts";
 import { buildView } from "./view.ts";
 
 export default function contextFold(pi: ExtensionAPI): void {
+	// At load, from `process.cwd()`, because the factory gets no context object and because a throw
+	// here drops the whole extension with a message, where a throw in a handler is swallowed (§13).
+	const config = readConfig(process.cwd());
 	const state: FoldState = { menu: undefined, menuAt: 0, folded: false, baseline: 0, reported: new Set() };
 
 	pi.on("context", (_event, ctx) => ({
@@ -29,7 +33,7 @@ export default function contextFold(pi: ExtensionAPI): void {
 	// registered in `session_start` disappears for the whole session the first time anything there
 	// fails — while the system prompt goes on saying it exists.
 	registerFold(pi, state);
-	registerEmergency(pi);
+	registerEmergency(pi, config);
 
 	pi.registerMessageRenderer<Shown>(NAME, (message, _options, theme) =>
 		labelled(theme, NAME, message.details?.lines ?? []),
@@ -41,7 +45,7 @@ export default function contextFold(pi: ExtensionAPI): void {
 		const blocks = liveBlocks(ctx.sessionManager);
 		setFoldStatus(ctx, blocks);
 		reportOrphans(ctx, state, blocks);
-		nudge(pi, ctx, state);
+		nudge(pi, ctx, state, config);
 	});
 }
 
@@ -64,7 +68,7 @@ function reportOrphans(ctx: ExtensionContext, state: FoldState, blocks: FoldBloc
  * 899K and silence the session until overflow (§17.9). It falls a turn late after a fold, which is
  * what the one-round pause covers.
  */
-function nudge(pi: ExtensionAPI, ctx: ExtensionContext, state: FoldState): void {
+function nudge(pi: ExtensionAPI, ctx: ExtensionContext, state: FoldState, config: Config): void {
 	const usage = ctx.getContextUsage();
 	// `null` right after a compaction, `undefined` with no model. Pi is honest about not knowing and
 	// we inherit the honesty: there is no second meter to fall back on (§7).
@@ -75,18 +79,19 @@ function nudge(pi: ExtensionAPI, ctx: ExtensionContext, state: FoldState): void 
 		state.folded = false;
 		return;
 	}
+	const step = config.nudgeGrowthTokens;
 	const growth = predicted - state.baseline;
-	if (growth < NUDGE_GROWTH_TOKENS) return;
+	if (growth < step) return;
 
-	// A nudge needs NUDGE_GROWTH_TOKENS of growth to fire, so with less than that left in the window
+	// A nudge needs `nudgeGrowthTokens` of growth to fire, so with less than that left in the window
 	// there is no room for another one: this is the last reminder before the context runs out (§7).
-	const last = usage.contextWindow - predicted < NUDGE_GROWTH_TOKENS;
+	const last = usage.contextWindow - predicted < step;
 	// A turn of its own only for the last nudge, which has to be acted on before the next overflow.
 	// An ordinary nudge reports and waits: it is read at the start of the next turn either way, and
 	// waking the model to tell it that nothing is required costs a model call for nothing.
-	sendNudge(pi, ctx, { last, trigger: last });
+	sendNudge(pi, ctx, { last, trigger: last, growth: step });
 	state.baseline = predicted;
-	log("nudge", { predicted, growth, last });
+	log("nudge", { predicted, growth, step, last });
 }
 
 /** MODEL-FACING-TEXT.md §1, in every request. The folder line is the one habit worth its tokens everywhere. */

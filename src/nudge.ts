@@ -6,8 +6,9 @@ import type { Shown } from "./shown.ts";
 export const NAME = "pi-context-fold";
 
 /**
- * Nudge once the context has grown by this much since the last nudge (§8). Not a setting: there is
- * one user, and a number nobody has ever wanted to change is a constant (C3, C9).
+ * Nudge once the context has grown by this much since the last nudge (§8). The default, and the only
+ * thing `settings.json` can change: measured on three days of one machine's sessions and never since,
+ * which is what earns it a key where nothing else here has one (§13, C9).
  */
 export const NUDGE_GROWTH_TOKENS = 200_000;
 
@@ -18,7 +19,7 @@ export const NUDGE_GROWTH_TOKENS = 200_000;
 export function sendNudge(
 	pi: ExtensionAPI,
 	ctx: ExtensionContext,
-	options: { last: boolean; trigger: boolean },
+	options: { last: boolean; trigger: boolean; growth: number },
 ): void {
 	const usage = ctx.getContextUsage();
 	// `null` right after a compaction, `undefined` with no model. Pi is honest about not knowing and
@@ -27,7 +28,7 @@ export function sendNudge(
 		usage === undefined || usage.tokens === null
 			? undefined
 			: `${shortTokens(usage.tokens)} of ${shortTokens(usage.contextWindow)} context used.`;
-	const body = options.last ? LAST_NUDGE : NUDGE;
+	const body = options.last ? LAST_NUDGE : nudgeBody(options.growth);
 	const lines = options.last ? ["Last reminder before the context runs out."] : [];
 	pi.sendMessage<Shown>(
 		{
@@ -49,7 +50,9 @@ const REMINDER = "This is a reminder that you handle the context compaction your
  * cannot get from the menu without paying 5.4K tokens for it first. The rules for picking the span
  * and writing the summary stay in the menu, where they are read at the moment they apply (§3a).
  */
-const NUDGE = `You will be reminded again after another ${shortTokens(NUDGE_GROWTH_TOKENS)} of growth.
+const nudgeBody = (
+	growth: number,
+) => `You will be reminded again after another ${shortTokens(growth)} of growth.
 
 You do not have to compact after this message, compact only if there is a large chunk of finished work in the way: exploration that led nowhere, tool output you have already used, a phase whose result is recorded. If nothing qualifies, carry on with the work.
 

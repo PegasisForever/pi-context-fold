@@ -86,7 +86,7 @@ Everything in §17 is what those reviews changed.
 | 11 | No on/off switch. To disable it, uninstall it. |
 | 12 | No `contextLimit` key. Pi already overrides a window per model in `~/.pi/agent/models.json`. |
 | 13 | No `protectedTools` and no `protectSkills` keys. Nothing is protected at all (27). |
-| 14 | The nudge trigger is **growth**: re-nudge every `NUDGE_GROWTH_TOKENS`, 200,000 (§8). |
+| 14 | The nudge trigger is **growth**: re-nudge every `nudgeGrowthTokens`, 200,000 by default and the one thing `settings.json` can change (§8, §13). |
 | 15 | No benefit floor. |
 | 16 | No environment variables. |
 | 17 | Per-project `<project>/.pi/context-fold.json` overrides `~/.pi/agent/context-fold.json`. |
@@ -110,7 +110,7 @@ principle to be recorded here. In practice the table above carries the *current*
 and **§17 carries every change with the evidence that forced it** — including changes to
 this document made during the build. §17 is the audit trail; this table is the state.
 
-**Progress** (§16 build order). All five steps are landed. 1,041 source lines, 307 test lines,
+**Progress** (§16 build order). All five steps are landed. 1,115 source lines, 307 test lines,
 6 tests. What has and has not been verified is §19.
 
 The audit trail is §17; every row there is a change some review forced, with the evidence.
@@ -502,11 +502,11 @@ limit. Deleted with the rest (C3).
 
 ### Normal pressure — at `turn_end`
 
-Nudge once `predicted` has grown by `NUDGE_GROWTH_TOKENS` since the last nudge — growth, not
+Nudge once `predicted` has grown by `nudgeGrowthTokens` since the last nudge — growth, not
 a fraction of the limit.
 
 ```
-nudge when  predicted − baseline ≥ NUDGE_GROWTH_TOKENS
+nudge when  predicted − baseline ≥ nudgeGrowthTokens
 ```
 
 No clamp on the step. The first draft capped it at 25% of the window for a 128K-window
@@ -557,7 +557,7 @@ on every nudge to count it, and the model gets the real list from `compact()` a 
 Cadence: at most one nudge per round, and none in the round straight after a fold. Keyed to
 the round, never to the user prompt.
 
-**The last nudge is different.** A nudge needs `NUDGE_GROWTH_TOKENS` of growth to fire, so once
+**The last nudge is different.** A nudge needs `nudgeGrowthTokens` of growth to fire, so once
 `contextWindow − predicted` falls below that, no second nudge can arrive before the overflow
 cut. That one says so and asks for the fold. It is a fact about the arithmetic, not a second
 threshold to tune.
@@ -675,14 +675,15 @@ smaller than the content it replaces, log it. The fold still happens.
 | `index.ts` | event wiring, tool registration | 97 |
 | `project.ts` | fold projection, block edit, pair removal | 94 |
 | `dump.ts` | write the transcripts to the session cache dir | 86 |
-| `nudge.ts` | the nudge text, and the one place it is sent from | 61 |
+| `nudge.ts` | the nudge text, and the one place it is sent from | 64 |
+| `config.ts` | the one key, out of Pi's settings file | 65 |
 | `shown.ts` | the TUI components both readers' halves are drawn with | 41 |
 | `state.ts` | block records via `appendEntry`, read from `getBranch()` | 36 |
 | `types.ts` | shared types | 32 |
 | `status.ts` | `setStatus` line | 15 |
 | `view.ts` | build the view from entries | 14 |
 | `log.ts` | one JSON line writer | 13 |
-| **Total** | **1041**, against a first estimate of ~830. | |
+| **Total** | **1,115**, against a first estimate of ~830. | |
 
 Against ~9,950 lines of source in the original.
 
@@ -711,19 +712,40 @@ says which is which.
 
 ---
 
-## 13. No config
+## 13. One config key
 
-There is no configuration file and no configuration key. The three that existed —
-`nudgeGrowthTokens`, `logFile`, `debug` — were never set by anybody: no file has ever been
-written on the one machine this runs on, and the only thing that ever changed `logFile` was the
-test suite, which is circular. C3 forbids a key without a reason to turn it, and C9 says a
-number nobody can measure does not get a knob. They are constants in the source now.
+`nudgeGrowthTokens`, and nothing else.
 
-Deleting the loader deleted the failure with it. A config read happens at `session_start`, pi
-catches a throw from a handler and carries on, and tool registration used to sit behind that
-read — so one mistyped key left the session with **no `compact` tool at all**, for its whole
-life, while the system prompt went on saying the tool existed. Reproduced. Nothing this
-extension needs is decided by a file any more.
+All three keys that once existed — `nudgeGrowthTokens`, `logFile`, `debug` — were deleted,
+because none had ever been set: no file had been written on the one machine this runs on, and the
+only thing that ever changed `logFile` was the test suite, which is circular. Two of them stay
+deleted. `nudgeGrowthTokens` comes back on its own merits: §18 measured it on three days of one
+machine's sessions and nothing has measured it since, the right value depends on a context window
+that changes with the model, and the nudge became cheap enough (§7) that nudging more often is now
+a reasonable thing to want. C9 says a number nobody can measure does not get a knob; this is the
+one number here that somebody can.
+
+The others stay refused, and so do the obvious next requests: `menuMax` and `labelMax` (the menu
+has never run at the wrong size), the `/compact` behaviour (decided, §8), the overflow cut fraction
+(measured against ten sessions, §17 row 19.57), and any `logFile` or `debug` (deleted for cause).
+
+### 13a. Where it lives, and when it is read
+
+Under `"pi-context-fold"` in pi's own `settings.json`, not in a file of our own. It is where
+`pi-powerline-footer` already keeps its configuration, so the user edits one file rather than one
+per extension. Global first, then `<cwd>/.pi/settings.json`, shallow-merged so the project wins —
+the order pi's own `SettingsManager` uses. Safe because pi re-reads the file and spreads it before
+every write it makes (`core/settings-manager.js:381`), so a key it does not know about survives a
+theme change.
+
+**Read at load, from `process.cwd()`.** This is the part the earlier deletion got right and must
+not be lost with it. A config read in `session_start` is behind a handler, pi catches a throw from
+a handler and carries on, and registration used to sit behind that read — so one mistyped key left
+the session with **no `compact` tool at all**, for its whole life, while the system prompt went on
+saying the tool existed. Reproduced. At load there is no such hole: pi drops an extension whose
+factory throws and reports it (`core/extensions/loader.js:483`), so a bad key means no extension
+and no system prompt claiming one, which is a state that cannot lie. The factory is given no
+context object, so `process.cwd()` stands in for `ctx.cwd`.
 
 ---
 
@@ -852,7 +874,7 @@ loaded: 19 context events, 0 provider errors.
 | It builds and installs | `pi install <path>` records the path and Pi loads `src/index.ts` directly, so there is no build step; `private: true` and the missing `files` field are harmless because a local install copies nothing and Pi rewrites the peer imports to its own copies |
 | It works in the owner's real extension set | `pi-lens`, `pi-goal-x`, `pi-powerline-footer`, `pi-mcp-adapter` all loaded; four folds, 33,970 → 20,113 tokens, no other extension misbehaved |
 | Removing it is safe | a session with four folds and a compaction, re-run with the extension gone: 122 entries → 118 messages, all 34 tool results present, the model answered correctly. Folding is a view transformation only |
-| Plausible user mishaps are recoverable | Ctrl-C mid-fold (self-heals), `--continue`, manual `/compact`, mid-session model switch, no config, unwritable cache (fails loudly, records nothing), two sessions on one project |
+| Plausible user mishaps are recoverable | Ctrl-C mid-fold (self-heals), `--continue`, manual `/compact`, mid-session model switch, no config, a mistyped config key (the extension does not load, and says why), unwritable cache (fails loudly, records nothing), two sessions on one project |
 
 ### Argued, not verified
 
@@ -941,6 +963,7 @@ fires at a sensible moment.
 | 19.50 | "menu tokens are excluded from the growth measurement" | they are not; the menu result just leaves the view next round | the arithmetic was wrong (20K, not 200K) and Pi's single number has nothing to subtract from |
 | 19.51 | A "hold the summary until no call is pending" condition | complete the closure's transitivity instead | the mid-round case becomes unrepresentable rather than handled — C4 |
 | 19.52 | "excluding compaction entries makes coverage contiguous" | it does not; coverage can split regardless | a span with no compaction entry, contiguous when folded, splits when a newer compaction hoists past an older one |
+| 19.74 | No config at all (§13, first pass) | one key, `nudgeGrowthTokens`, under our own name in Pi's `settings.json`, read at load | the one number here that was measured once and never since, on a window that changes with the model; and the settings file is where `pi-powerline-footer` already looks, so the user edits one file, not one per extension |
 | 19.73 | `/compact` runs the mechanical cut, like a real overflow | it cancels Pi's compaction and sends the ordinary nudge, with a turn of its own | the key cannot be removed from Pi, and a key you press by habit must not throw half the session out of view with no summary |
 | 19.72 | A span may name any menu we ever issued | only the menu from this assistant message or the one before | the menu result leaves the view one assistant message after it is served, so past that point the model names ids from a list it cannot see |
 | 19.71 | One span per call (19.59) | a list again, with the three defects answered by construction | overlap is a sorted neighbour check on one menu; order cannot matter because every span is resolved and planned against one snapshot; and every step that can throw runs before the first record is appended |
@@ -963,7 +986,7 @@ fires at a sensible moment.
 | 19.55 | The nudge is appended by the `context` handler each turn | it is a persisted Pi message sent at `turn_end` | appending in the handler is a decision inside a handler D2 requires to be pure; persisting costs ~48 tokens per nudge (~6 per three days) and survives restarts |
 | 19.53 | A fixpoint closure over the call↔result relation | two bounded hops | measured max eccentricity 2 over 6,666 components; and a fixpoint would cascade coverage across unrelated rounds if a call id were ever repeated, where a bounded pass cannot — the general version is the *less* safe one |
 
-Module estimate: **~950 lines**; the tree is 1,041. Down from ~990, ~1,385, ~1,810 in the first draft, and
+Module estimate: **~950 lines**; the tree is 1,115. Down from ~990, ~1,385, ~1,810 in the first draft, and
 ~9,950 in the original.
 
 ---
@@ -980,7 +1003,7 @@ per-turn deltas across 26 sessions, three days):
 | **200,000** | **6** | **0** |
 
 No single turn ever grows more than 90,764 tokens, so the step is cumulative. At 200K the
-rule fires roughly twice a day and no session is ever nudged twice. **Settled at 200,000**
+rule fires roughly twice a day and no session is ever nudged twice. **Settled at 200,000** as the default, and it is the one number with a key (§13)
 — chosen knowing the measurement, on a 1M window where pressure is rare.
 
 **2. `MENU_MAX`.** Settled: **200**, divided evenly by round count (§5). ≈ 5K tokens per
