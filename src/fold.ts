@@ -51,7 +51,7 @@ export interface FoldState {
 // The one tool (§6). No arguments returns the menu; arguments fold. Arguments are Pi's own parse and
 // schema validation, with no `prepareArguments` shim: lenient parsing exists in the original for a
 // Qwen in non-strict tool mode and a local quantised 27B, which C2 excludes.
-export function registerCompress(pi: ExtensionAPI, state: FoldState): void {
+export function registerFold(pi: ExtensionAPI, state: FoldState): void {
 	pi.registerTool<typeof parameters, Shown>({
 		name: TOOL_NAME,
 		label: "Compact",
@@ -126,7 +126,7 @@ function assistants(view: ViewItem[]): number {
 	return view.filter((item) => item.message.role === "assistant").length;
 }
 
-/** PROMPTS.md §5. Each failure names the id and the next action; none of them returns the menu. */
+/** MODEL-FACING-TEXT.md §5. Each failure names the id and the next action; none of them returns the menu. */
 function resolve(state: FoldState, params: Params, now: number): Fold[] {
 	const spans = params.spans ?? [];
 	if (spans.length === 0)
@@ -137,7 +137,7 @@ function resolve(state: FoldState, params: Params, now: number): Fold[] {
 		throw new Error(
 			"The list these ids came from is not the current one. Call compact() with no arguments, then compact in your next message.",
 		);
-	const folds = spans.map((one) => one_(state.menu as Menu, one)).sort((a, b) => a.at - b.at);
+	const folds = spans.map((one) => resolveSpan(state.menu as Menu, one)).sort((a, b) => a.at - b.at);
 	for (let i = 1; i < folds.length; i++) {
 		const before = folds[i - 1]!;
 		const after = folds[i]!;
@@ -149,7 +149,7 @@ function resolve(state: FoldState, params: Params, now: number): Fold[] {
 	return folds;
 }
 
-function one_(menu: Menu, span: Span): Fold {
+function resolveSpan(menu: Menu, span: Span): Fold {
 	const entries = menu.entries;
 	const from = entries.find((entry) => entry.id === span.from);
 	if (from === undefined)
@@ -223,7 +223,7 @@ function plan(slots: Slot[], fold: Fold, id: string, toolCallId: string, session
 	};
 }
 
-/** PROMPTS.md §4: the block id, the real span, and the path. One line per span. */
+/** MODEL-FACING-TEXT.md §4: the block id, the real span, and the path. One line per span. */
 export function resultLine(record: FoldBlock, fold: { from: string; to: string }): string {
 	return (
 		`Compacted ${fold.from}–${fold.to} into ${record.id}. ` +

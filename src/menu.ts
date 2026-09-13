@@ -5,7 +5,7 @@ import type { FoldBlock, Msg, Slot, ViewItem } from "./types.ts";
 
 const MENU_MAX = 200;
 const LABEL_MAX = 40;
-/** PROMPTS.md §3b: the tool's own primary argument, and nothing else. "First non-empty string"
+/** MODEL-FACING-TEXT.md §3b: the tool's own primary argument, and nothing else. "First non-empty string"
  * labels a `write` row with the file body it is writing, 82 times in the recorded corpus; a tool
  * with neither key is named alone, because a truncated argument blob recognises a span worse. */
 const PRIMARY = ["path", "command"];
@@ -121,7 +121,7 @@ function clip(text: string, max: number = LABEL_MAX): string {
 	return text.length <= max ? text : `${text.slice(0, max - 1)}…`;
 }
 
-/** PROMPTS.md §3a and §3b, in that order: the folding guidance, then the entries it applies to. What
+/** MODEL-FACING-TEXT.md §3a and §3b, in that order: the folding guidance, then the entries it applies to. What
  * qualifies for a fold at all is in the nudge instead, because that decision is made before this
  * call is paid for; what is here is what picking a span and writing a summary need. An
  * empty table takes §3b-empty alone — the guidance is for choosing a span, and there is none. */

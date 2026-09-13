@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 import type { SessionEntry } from "@earendil-works/pi-coding-agent";
-import { registerCompress, resultLine } from "../src/compress.ts";
+import { registerFold, resultLine } from "../src/fold.ts";
 import { shortTokens, summaryMessage } from "../src/project.ts";
 import { liveBlocks } from "../src/state.ts";
 import { setFoldStatus } from "../src/status.ts";
@@ -114,7 +114,7 @@ test("fold-block records read back from the branch, and absorbing a block takes 
 		["b2"],
 	);
 	assert.deepEqual([...(live[0] ?? assert.fail("b2 is not live")).entryIds].sort(), ["a", "b", "c"]);
-	// Without the retired calls, b1's own compress call comes back — and its arguments still carry
+	// Without the retired calls, b1's own compact call comes back — and its arguments still carry
 	// the whole summary b1 replaced, so condensing summaries would reclaim nothing.
 	assert.deepEqual([...(live[0] ?? assert.fail("b2 is not live")).dropToolCallIds].sort(), [
 		"call-1",
@@ -237,7 +237,7 @@ function driveCompact() {
 		},
 	};
 	const state = { menu: undefined, menuAt: 0, folded: false, baseline: 0, reported: new Set<string>() };
-	registerCompress(pi as never, state);
+	registerFold(pi as never, state);
 	const ctx = {
 		sessionManager: {
 			buildContextEntries: () => entries,

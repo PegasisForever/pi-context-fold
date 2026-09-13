@@ -90,7 +90,7 @@ function afterCut(view: ViewItem[], slots: Slot[], at: number): string {
 	return (next ?? view[0]!).entryId;
 }
 
-/** PROMPTS.md §8. Says what happened, that it was not summarised, and where the content is. The
+/** MODEL-FACING-TEXT.md §8. Says what happened, that it was not summarised, and where the content is. The
  * write is the only thing left that can fail, and §8 keeps the compaction either way (C10). */
 function note(ctx: ExtensionContext, cut: Msg[], tokens: number, orphaned: FoldBlock[]): string {
 	const size = `${cut.length.toLocaleString("en-US")} messages`;

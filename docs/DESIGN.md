@@ -110,8 +110,8 @@ principle to be recorded here. In practice the table above carries the *current*
 and **§17 carries every change with the evidence that forced it** — including changes to
 this document made during the build. §17 is the audit trail; this table is the state.
 
-**Progress** (§16 build order). All five steps are landed. 914 source lines, 178 test lines,
-4 tests. What has and has not been verified is §19.
+**Progress** (§16 build order). All five steps are landed. 1,041 source lines, 307 test lines,
+6 tests. What has and has not been verified is §19.
 
 The audit trail is §17; every row there is a change some review forced, with the evidence.
 
@@ -660,29 +660,29 @@ guarantee the instruction gives for free.
 
 **None.** `sanitize.ts` is deleted.
 
-One measurement survives, in `compress.ts`, with no decision attached: if a summary is not
+One measurement survives, in `fold.ts`, with no decision attached: if a summary is not
 smaller than the content it replaces, log it. The fold still happens.
 
 ---
 
 ## 11. Module layout
 
-| File | Purpose | Est. lines |
+| File | Purpose | Lines |
 |---|---|---|
-| `index.ts` | event wiring, tool registration | 120 |
-| `nudge.ts` | the nudge text, and the one place it is sent from | 62 |
-| `view.ts` | build the view from entries, round boundaries | 100 |
-| `menu.ts` | even-count partition, rendering | 80 |
-| `compress.ts` | the one tool | 140 |
-| `project.ts` | fold projection, block edit, pair removal | 170 |
-| `dump.ts` | write folded originals to the session cache dir | 50 |
-| `emergency.ts` | `session_before_compact`, mechanical dump | 60 |
-| `state.ts` | block records via `appendEntry`, read from `getBranch()` | 80 |
-| `status.ts` | `setStatus` line | 20 |
-| `types.ts` | shared types (absent from the first estimate) | 32 |
+| `fold.ts` | the one tool: the menu, the spans, the records | 258 |
+| `menu.ts` | even-count partition, rendering | 178 |
+| `emergency.ts` | `session_before_compact`: `/compact`, and the overflow cut | 116 |
+| `index.ts` | event wiring, tool registration | 97 |
+| `project.ts` | fold projection, block edit, pair removal | 94 |
+| `dump.ts` | write the transcripts to the session cache dir | 86 |
+| `nudge.ts` | the nudge text, and the one place it is sent from | 61 |
 | `shown.ts` | the TUI components both readers' halves are drawn with | 41 |
+| `state.ts` | block records via `appendEntry`, read from `getBranch()` | 36 |
+| `types.ts` | shared types | 32 |
+| `status.ts` | `setStatus` line | 15 |
+| `view.ts` | build the view from entries | 14 |
 | `log.ts` | one JSON line writer | 13 |
-| **Total** | **actual 1041**, against a first estimate of ~830. | |
+| **Total** | **1041**, against a first estimate of ~830. | |
 
 Against ~9,950 lines of source in the original.
 
@@ -690,10 +690,12 @@ Against ~9,950 lines of source in the original.
 
 ## 12. The test suite
 
-**Four tests, 178 lines.** They build their own fixtures and depend on nothing outside the
+**Six tests, 307 lines.** They build their own fixtures and depend on nothing outside the
 repository: block records read back from the branch and absorbed correctly, the status line,
 the two model-facing strings §4 and §6 read out of `docs/MODEL-FACING-TEXT.md` rather than
-copied, and the one token format.
+copied, the one token format, and two that drive the real tool through a stub session — one
+for the three defects the list of spans must not bring back, one for a list of ids that is no
+longer current (§6).
 
 **There used to be forty-four.** The other forty replayed a corpus of 25 recorded session
 `.jsonl` files from one machine, by absolute path. Everything in §19's *Verified* column was
@@ -792,7 +794,7 @@ went untested — the audit found their mutations survived.
    Verify invariants 1, 2, 3, 4 and 6 against recorded sessions, and check the rebuild
    against a `context` handler that runs before ours.
 2. `status.ts`, reading `ctx.getContextUsage()`. No meter of our own (§7).
-3. `menu.ts` + `compress.ts` + `dump.ts` + the nudge. First real folds. Two things the
+3. `menu.ts` + `fold.ts` + `dump.ts` + the nudge. First real folds. Two things the
    closure in §6 makes true and this step must respect: a mid-round span removes **more**
    entries than the model named, so a record's `msgs` must count what the projection
    actually removed rather than the span the model asked for; and a block whose entries have
@@ -961,7 +963,7 @@ fires at a sensible moment.
 | 19.55 | The nudge is appended by the `context` handler each turn | it is a persisted Pi message sent at `turn_end` | appending in the handler is a decision inside a handler D2 requires to be pure; persisting costs ~48 tokens per nudge (~6 per three days) and survives restarts |
 | 19.53 | A fixpoint closure over the call↔result relation | two bounded hops | measured max eccentricity 2 over 6,666 components; and a fixpoint would cascade coverage across unrelated rounds if a call id were ever repeated, where a bounded pass cannot — the general version is the *less* safe one |
 
-Module estimate: **~950 lines**; the tree is 914. Down from ~990, ~1,385, ~1,810 in the first draft, and
+Module estimate: **~950 lines**; the tree is 1,041. Down from ~990, ~1,385, ~1,810 in the first draft, and
 ~9,950 in the original.
 
 ---

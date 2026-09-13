@@ -1,7 +1,7 @@
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
-import { type FoldState, registerCompress } from "./compress.ts";
 import { blocksDir } from "./dump.ts";
 import { registerEmergency } from "./emergency.ts";
+import { type FoldState, registerFold } from "./fold.ts";
 import { log } from "./log.ts";
 import { NAME, NUDGE_GROWTH_TOKENS, sendNudge } from "./nudge.ts";
 import { projectSlots } from "./project.ts";
@@ -28,7 +28,7 @@ export default function contextFold(pi: ExtensionAPI): void {
 	// Registered here, never inside a handler: pi catches a handler throw and carries on, so a tool
 	// registered in `session_start` disappears for the whole session the first time anything there
 	// fails — while the system prompt goes on saying it exists.
-	registerCompress(pi, state);
+	registerFold(pi, state);
 	registerEmergency(pi);
 
 	pi.registerMessageRenderer<Shown>(NAME, (message, _options, theme) =>
@@ -46,7 +46,7 @@ export default function contextFold(pi: ExtensionAPI): void {
 }
 
 /** Decision 28's unusable record, noticed where a decision is allowed to happen (D2). A block with no
- * entry left in the view emits no summary; `compress` refuses any fold that would cause that, so
+ * entry left in the view emits no summary; `compact` refuses any fold that would cause that, so
  * what reaches here is a compaction we did not make, or the overflow cut trading an anchor away. */
 function reportOrphans(ctx: ExtensionContext, state: FoldState, blocks: FoldBlock[]): void {
 	const present = new Set(ctx.sessionManager.buildContextEntries().map((entry) => entry.id));
@@ -89,7 +89,7 @@ function nudge(pi: ExtensionAPI, ctx: ExtensionContext, state: FoldState): void 
 	log("nudge", { predicted, growth, last });
 }
 
-/** PROMPTS.md §1, in every request. The folder line is the one habit worth its tokens everywhere. */
+/** MODEL-FACING-TEXT.md §1, in every request. The folder line is the one habit worth its tokens everywhere. */
 function systemPrompt(sessionId: string): string {
 	return `### Context Management
 

@@ -2,7 +2,7 @@ import type { FoldBlock, Msg, Slot, ViewItem } from "./types.ts";
 
 export const TOOL_NAME = "compact";
 
-/** Covered entries out, each block's summary at its first covered entry, retired compress pairs out
+/** Covered entries out, each block's summary at its first covered entry, retired compact pairs out
  * (§6). Pure: no I/O, no decisions (D2). The retired calls are derived here, not passed in: every
  * caller wants the same ones and a caller that forgot would put a dead 5K menu back in the view. */
 export function projectSlots(view: ViewItem[], blocks: FoldBlock[]): Slot[] {
@@ -29,7 +29,7 @@ export function projectSlots(view: ViewItem[], blocks: FoldBlock[]): Slot[] {
 	return out;
 }
 
-/** The compress calls whose menu result has been in the view for a round. The menu costs ~5K and is
+/** The compact calls whose menu result has been in the view for a round. The menu costs ~5K and is
  * dead once the model has answered it, whether or not it folded (§8); a failed fold is not a menu
  * call, so failures stay visible untouched (§6). */
 export function staleMenuCalls(view: ViewItem[]): string[] {
@@ -70,7 +70,7 @@ function keep(message: Msg, covered: boolean, goneCalls: Set<string>): Msg | und
 	return content.length === 0 ? undefined : { ...message, content };
 }
 
-/** PROMPTS.md §6. Pi wraps its own compaction summaries this way, so the tag needs no explaining.
+/** MODEL-FACING-TEXT.md §6. Pi wraps its own compaction summaries this way, so the tag needs no explaining.
  * One attribute: the path is the only one the model can act on. The block id, the message count and
  * the two token numbers were ours to read, and the TUI reads them from the record instead. */
 export function summaryMessage(block: FoldBlock): Msg {
