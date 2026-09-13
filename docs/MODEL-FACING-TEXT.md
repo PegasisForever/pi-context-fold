@@ -414,6 +414,26 @@ Compact as soon as possible. Call `compact()` with no arguments to list the span
 **88 tokens**, measured — shorter than the ordinary nudge, because everything that helps the
 model decline is gone. What happens next, in full, is §8.
 
+### 7b. `/compact`, the key we cannot delete
+
+Pi's own `/compact` cannot be removed by an extension and cannot be shadowed by one. So the key
+stays and we choose what it does: it cancels Pi's compaction and sends **the ordinary nudge**,
+§7 word for word, with a turn of its own.
+
+The ordinary one and not §7a's, deliberately. Pressing the key says *now would be a good time*,
+not *this session is about to run out*. The model still decides, and if nothing is finished it
+says so and carries on — the same answer it is allowed to give any other nudge.
+
+The number sentence is dropped when Pi does not know the context size, which it does not
+immediately after a compaction. Nothing invents a second meter (P4):
+
+```
+<pi-context-fold>
+This is a reminder that you handle the context compaction yourself. You will be reminded again after another 200K of growth.
+…
+</pi-context-fold>
+```
+
 The prior art shows the cost of getting this wrong: `acp-kernel` ships its 1,179-token
 rules in the system prompt **and** again in full inside every nudge.
 
@@ -421,7 +441,9 @@ rules in the system prompt **and** again in full inside every nudge.
 
 ## 8. Overflow note
 
-Written by us as Pi's compaction summary. Replaces the older half of the session.
+Written by us as Pi's compaction summary. Replaces the older half of the session. **Only on a
+real overflow** — `/compact` is answered with a nudge (§7b) and ordinary pressure is cancelled,
+so this text is reached when the window is genuinely full and there is no turn left to ask in.
 
 **No marker of our own.** This string becomes the `summary` field of Pi's compaction entry,
 and Pi wraps it on the wire with *"The conversation history before this point was compacted

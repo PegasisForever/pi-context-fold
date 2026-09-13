@@ -581,7 +581,18 @@ interface CompactionResult { summary: string; firstKeptEntryId: string;
 ```
 
 - `reason: "threshold"` → `{cancel: true}`. We manage ordinary pressure.
-- `reason: "overflow"` or `"manual"` → supply our own. Never cancel.
+- `reason: "manual"` → `{cancel: true}`, **and send the ordinary nudge with a turn of its own**.
+- `reason: "overflow"` → supply our own compaction. Never cancel.
+
+**`/compact` is answered, not obeyed.** Pi's command list is a fixed array in its own source
+(`core/slash-commands.js`) and an extension cannot remove an entry or shadow one — Pi finds the
+clash itself and demotes the extension's command
+(`getBuiltInCommandConflictDiagnostics`). So the key stays, and what it does is ours to choose.
+It used to fall into the mechanical cut below, which means typing `/compact` out of habit threw
+half the session out of view with no summary. It now cancels Pi's compaction and asks the model,
+in the ordinary nudge's own words, to compact itself. The nudge is the neutral one: pressing the
+key says *now would be a good time*, not *there is an emergency*. It is sent with
+`triggerTurn: true`, because you pressed a key and something has to happen (§17, row 19.73).
 
 **No model call. The recovery is mechanical:**
 
@@ -659,6 +670,7 @@ smaller than the content it replaces, log it. The fold still happens.
 | File | Purpose | Est. lines |
 |---|---|---|
 | `index.ts` | event wiring, tool registration | 120 |
+| `nudge.ts` | the nudge text, and the one place it is sent from | 62 |
 | `view.ts` | build the view from entries, round boundaries | 100 |
 | `menu.ts` | even-count partition, rendering | 80 |
 | `compress.ts` | the one tool | 140 |
@@ -670,7 +682,7 @@ smaller than the content it replaces, log it. The fold still happens.
 | `types.ts` | shared types (absent from the first estimate) | 32 |
 | `shown.ts` | the TUI components both readers' halves are drawn with | 41 |
 | `log.ts` | one JSON line writer | 13 |
-| **Total** | **actual 914**, against a first estimate of ~830. | |
+| **Total** | **actual 1041**, against a first estimate of ~830. | |
 
 Against ~9,950 lines of source in the original.
 
@@ -927,6 +939,7 @@ fires at a sensible moment.
 | 19.50 | "menu tokens are excluded from the growth measurement" | they are not; the menu result just leaves the view next round | the arithmetic was wrong (20K, not 200K) and Pi's single number has nothing to subtract from |
 | 19.51 | A "hold the summary until no call is pending" condition | complete the closure's transitivity instead | the mid-round case becomes unrepresentable rather than handled — C4 |
 | 19.52 | "excluding compaction entries makes coverage contiguous" | it does not; coverage can split regardless | a span with no compaction entry, contiguous when folded, splits when a newer compaction hoists past an older one |
+| 19.73 | `/compact` runs the mechanical cut, like a real overflow | it cancels Pi's compaction and sends the ordinary nudge, with a turn of its own | the key cannot be removed from Pi, and a key you press by habit must not throw half the session out of view with no summary |
 | 19.72 | A span may name any menu we ever issued | only the menu from this assistant message or the one before | the menu result leaves the view one assistant message after it is served, so past that point the model names ids from a list it cannot see |
 | 19.71 | One span per call (19.59) | a list again, with the three defects answered by construction | overlap is a sorted neighbour check on one menu; order cannot matter because every span is resolved and planned against one snapshot; and every step that can throw runs before the first record is appended |
 | 19.70 | The tool is `compress`, and the model is told to "fold" | it is `compact`, and the verb is compact everywhere the model or the TUI reads | the word the model already knows for this operation; `fold` was ours, and it had to be taught |

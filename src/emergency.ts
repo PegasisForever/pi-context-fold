@@ -8,6 +8,7 @@ import {
 import { messageText, writeOverflow } from "./dump.ts";
 import { log } from "./log.ts";
 import { rounds } from "./menu.ts";
+import { sendNudge } from "./nudge.ts";
 import { projectSlots, shortTokens, summaryMessage } from "./project.ts";
 import { liveBlocks } from "./state.ts";
 import type { FoldBlock, Msg, Slot, ViewItem } from "./types.ts";
@@ -15,11 +16,20 @@ import { buildView } from "./view.ts";
 
 /** §8. Pi's own compaction summarises the raw history, which on a folded session overflows on the
  * summarisation call itself (D5), so its summariser must never run: ordinary pressure is cancelled,
- * the two real compactions are answered with a mechanical cut, and nothing here throws or cancels.
+ * a real overflow is answered with a mechanical cut, and nothing here throws.
  * No model call, so there is no timeout, no rate limit and no fallback for either. */
 export function registerEmergency(pi: ExtensionAPI): void {
 	pi.on("session_before_compact", (event, ctx) => {
 		if (event.reason === "threshold") return { cancel: true };
+		// `/compact` cannot be removed from Pi, so it is answered rather than obeyed (§7b). Pi's
+		// summariser is cancelled and the model is asked, in the ordinary nudge's words, to compact
+		// itself — with a turn of its own, because you pressed a key and expect something to happen.
+		// The mechanical cut is kept for "overflow", where there is no turn left to ask in.
+		if (event.reason === "manual") {
+			sendNudge(pi, ctx, { last: false, trigger: true });
+			log("manual-compact", {});
+			return { cancel: true };
+		}
 		const compaction = recover(event, ctx);
 		try {
 			log("emergency", { reason: event.reason, keptFrom: compaction.firstKeptEntryId });

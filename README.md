@@ -39,6 +39,8 @@ different instruction from every other harness, and the reason this one can be s
   spans leave the view, each replaced by `<summary full-transcript="…/b5.txt">`.
 - The original goes to `~/.pi/agent/context-fold/<session>/b5.txt`. The model is told in its
   system prompt to search that folder before asking you to repeat something — and it does.
+- `/compact` does not run pi's compaction. It sends the model the same neutral nudge, with a
+  turn of its own, so pressing it means "now would be a good time" and the model decides.
 - On a context overflow, the older half is cut mechanically and written to a file. No second
   model call, no summarisation that could fail.
 
@@ -136,7 +138,7 @@ add"*.
 
 ## Size
 
-**949 lines of source, 4 tests.** One tool, no config, no slash command.
+**1041 lines of source, 6 tests.** One tool, no config, no slash command.
 
 The extension it replaces is ~9,950 lines. Roughly 250 mutations were run against this tree
 across seven review rounds; §17 records what each one changed.
