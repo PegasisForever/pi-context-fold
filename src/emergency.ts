@@ -5,14 +5,14 @@ import {
 	estimateTokens,
 	type SessionBeforeCompactEvent,
 } from "@earendil-works/pi-coding-agent";
-import type { FoldState } from "./compress";
-import { messageText, writeOverflow } from "./dump";
-import { log } from "./log";
-import { rounds } from "./menu";
-import { projectSlots, shortTokens, summaryMessage } from "./project";
-import { liveBlocks } from "./state";
-import type { FoldBlock, Msg, Slot, ViewItem } from "./types";
-import { buildView } from "./view";
+import type { FoldState } from "./compress.ts";
+import { messageText, writeOverflow } from "./dump.ts";
+import { log } from "./log.ts";
+import { rounds } from "./menu.ts";
+import { projectSlots, shortTokens, summaryMessage } from "./project.ts";
+import { liveBlocks } from "./state.ts";
+import type { FoldBlock, Msg, Slot, ViewItem } from "./types.ts";
+import { buildView } from "./view.ts";
 
 /** §8. Pi's own compaction summarises the raw history, which on a folded session overflows on the
  * summarisation call itself (D5), so its summariser must never run: ordinary pressure is cancelled,
@@ -38,7 +38,9 @@ function recover(event: SessionBeforeCompactEvent, ctx: ExtensionContext): Compa
 	const at = halfway(slots);
 	const firstKeptEntryId = afterCut(view, slots, at);
 	const cut = slots.slice(0, at).map((slot) => slot.message);
-	const kept = new Set(view.slice(view.findIndex((item) => item.entryId === firstKeptEntryId)).map((item) => item.entryId));
+	const kept = new Set(
+		view.slice(view.findIndex((item) => item.entryId === firstKeptEntryId)).map((item) => item.entryId),
+	);
 	const orphaned = blocks.filter((block) => !block.entryIds.some((id) => kept.has(id)));
 	const tokens = cut.reduce((sum, message) => sum + estimateTokens(message), 0);
 	return {
@@ -73,7 +75,8 @@ function halfway(slots: Slot[]): number {
  * a throw would hand the turn to its raw summariser, which is the overflow D5 exists to prevent. */
 function afterCut(view: ViewItem[], slots: Slot[], at: number): string {
 	const last = slots.slice(0, at).findLast((slot) => slot.entryId !== undefined)?.entryId;
-	const next = last === undefined ? undefined : view[view.findLastIndex((item) => item.entryId === last) + 1];
+	const next =
+		last === undefined ? undefined : view[view.findLastIndex((item) => item.entryId === last) + 1];
 	// Pi skips this hook when it has nothing to compact, so the view always has a first entry.
 	return (next ?? view[0]!).entryId;
 }

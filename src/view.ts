@@ -1,5 +1,5 @@
 import { type SessionEntry, sessionEntryToContextMessages } from "@earendil-works/pi-coding-agent";
-import type { ViewItem } from "./types";
+import type { ViewItem } from "./types.ts";
 
 // From entries, not `event.messages`: handlers chain and pi-goal-x deletes messages before we run,
 // so a position there addresses nothing. Items are Pi's own objects, never mutated (§3, C6).

@@ -1,5 +1,13 @@
 import assert from "node:assert/strict";
-import { appendFileSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import {
+	appendFileSync,
+	mkdirSync,
+	mkdtempSync,
+	readdirSync,
+	readFileSync,
+	rmSync,
+	writeFileSync,
+} from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
@@ -8,9 +16,9 @@ import {
 	type CompactionResult,
 	type ContextUsage,
 	DEFAULT_COMPACTION_SETTINGS,
-	estimateTokens,
 	type ExtensionAPI,
 	type ExtensionContext,
+	estimateTokens,
 	type FileEntry,
 	parseSessionEntries,
 	type SessionBeforeCompactEvent,
@@ -18,22 +26,25 @@ import {
 	sessionEntryToContextMessages,
 	type ToolDefinition,
 } from "@earendil-works/pi-coding-agent";
-import { resultLine } from "../src/compress";
-import { loadConfig } from "../src/config";
-import { messageText } from "../src/dump";
-import contextFold from "../src/index";
-import { buildMenu, EMPTY, INSTRUCTION, rounds } from "../src/menu";
-import { projectSlots, shortTokens, staleMenuCalls, summaryMessage } from "../src/project";
-import { liveBlocks } from "../src/state";
-import { setFoldStatus } from "../src/status";
-import type { FoldBlock, Msg, ViewItem } from "../src/types";
-import { buildView } from "../src/view";
+import { resultLine } from "../src/compress.ts";
+import { loadConfig } from "../src/config.ts";
+import { messageText } from "../src/dump.ts";
+import contextFold from "../src/index.ts";
+import { buildMenu, EMPTY, INSTRUCTION, rounds } from "../src/menu.ts";
+import { projectSlots, shortTokens, staleMenuCalls, summaryMessage } from "../src/project.ts";
+import { liveBlocks } from "../src/state.ts";
+import { setFoldStatus } from "../src/status.ts";
+import type { FoldBlock, Msg, ViewItem } from "../src/types.ts";
+import { buildView } from "../src/view.ts";
 
 const SESSION_DIR = "/home/rmng/.pi/agent/sessions/--home-rmng-RMNG--";
 
 // Every dump this suite writes lands under its own home. `~/.cache/pi/context-fold/overflow/` is
 // where a real overflow dump lands, and 488 files from earlier runs had collected there.
 const REAL_HOME = homedir();
+
+/** The loader reads `getAgentDir()` on every call, so the suite must too, not a cached path. */
+const agentDir = (): string => join(homedir(), ".pi", "agent");
 process.env.HOME = mkdtempSync(join(tmpdir(), "context-fold-home-"));
 
 /** The projection under test; every assertion below is about the messages it emits. */
@@ -48,43 +59,51 @@ function sessionFiles(): string[] {
 		.map((name) => join(SESSION_DIR, name));
 }
 
-const PROMPTS = readFileSync(new URL("../PROMPTS.md", import.meta.url), "utf8");
+const TEXT = readFileSync(new URL("../docs/MODEL-FACING-TEXT.md", import.meta.url), "utf8");
 
 /**
- * DESIGN §13a: PROMPTS.md is the contract for every string the model sees, so the suite reads them
+ * DESIGN §13a: MODEL-FACING-TEXT.md is the contract for every string the model sees, so the suite reads them
  * from it. A literal copied into this file lets the code and the document drift apart silently, and
  * the audit found seven sections doing exactly that.
  */
 function section(number: string): string {
-	const at = PROMPTS.indexOf(`\n## ${number}.`);
-	assert.notEqual(at, -1, `PROMPTS.md has no §${number}`);
-	const end = PROMPTS.indexOf("\n## ", at + 1);
-	return PROMPTS.slice(at, end === -1 ? PROMPTS.length : end);
+	const at = TEXT.indexOf(`\n## ${number}.`);
+	assert.notEqual(at, -1, `MODEL-FACING-TEXT.md has no §${number}`);
+	const end = TEXT.indexOf("\n## ", at + 1);
+	return TEXT.slice(at, end === -1 ? TEXT.length : end);
 }
 
 /** The nth blockquote of a section, as the model reads it: the `> ` markers gone, wrapping kept. */
 function quoted(number: string, nth = 0): string {
 	const blocks = section(number).match(/(?:^>.*\n)+/gm) ?? [];
-	const block = blocks[nth] ?? assert.fail(`PROMPTS.md §${number} has no blockquote ${nth}`);
+	const block = blocks[nth] ?? assert.fail(`MODEL-FACING-TEXT.md §${number} has no blockquote ${nth}`);
 	return unmark(block).trimEnd();
 }
 
 /** The nth fenced block of a section. */
 function fenced(number: string, nth = 0): string {
 	const blocks = [...section(number).matchAll(/^```\n([\s\S]*?)^```$/gm)].map((match) => match[1] ?? "");
-	return (blocks[nth] ?? assert.fail(`PROMPTS.md §${number} has no fenced block ${nth}`)).trimEnd();
+	return (
+		blocks[nth] ?? assert.fail(`MODEL-FACING-TEXT.md §${number} has no fenced block ${nth}`)
+	).trimEnd();
 }
 
 /** §8 wraps each of its two notes across four lines and quotes it, so the string is the backticks'
  * content with the document's own wrapping removed. */
 function note(nth: number): string {
 	const text = quoted("8", nth);
-	return flat(/`([^`]+)`/s.exec(text)?.[1] ?? assert.fail(`PROMPTS.md §8 blockquote ${nth} quotes no note`));
+	return flat(
+		/`([^`]+)`/s.exec(text)?.[1] ??
+			assert.fail(`MODEL-FACING-TEXT.md §8 blockquote ${nth} quotes no note`),
+	);
 }
 
 /** A cell of §5's failure table, named by the case in its first column. */
 function failure(label: string): string {
-	const row = section("5").split("\n").find((line) => line.startsWith(`| ${label} |`)) ?? assert.fail(`§5 has no "${label}" row`);
+	const row =
+		section("5")
+			.split("\n")
+			.find((line) => line.startsWith(`| ${label} |`)) ?? assert.fail(`§5 has no "${label}" row`);
 	return (row.split("|")[2] ?? "").trim().replace(/`/g, "");
 }
 
@@ -100,14 +119,17 @@ function flat(text: string): string {
 }
 
 /**
- * The document's own text as a pattern: every word of PROMPTS.md is pinned and only the values it
+ * The document's own text as a pattern: every word of MODEL-FACING-TEXT.md is pinned and only the values it
  * shows as examples are loosened, for the two — a dump path's timestamp and an `fs` error — that the
  * run alone knows. A document edit moves the example out from under `fills` and fails here.
  */
 function asPattern(text: string, fills: [string, string][]): RegExp {
 	let pattern = escaped(text);
 	for (const [example, value] of fills) {
-		assert.ok(pattern.includes(escaped(example)), `PROMPTS.md no longer shows ${JSON.stringify(example)}`);
+		assert.ok(
+			pattern.includes(escaped(example)),
+			`MODEL-FACING-TEXT.md no longer shows ${JSON.stringify(example)}`,
+		);
 		pattern = pattern.replace(escaped(example), value);
 	}
 	return new RegExp(`^${pattern}$`);
@@ -123,7 +145,9 @@ function contextEntries(file: string): SessionEntry[] {
 	const seen = parsed.get(file);
 	if (seen !== undefined) return seen;
 	const entries: FileEntry[] = parseSessionEntries(readFileSync(file, "utf8"));
-	const built = buildContextEntries(entries.filter((entry): entry is SessionEntry => entry.type !== "session"));
+	const built = buildContextEntries(
+		entries.filter((entry): entry is SessionEntry => entry.type !== "session"),
+	);
 	parsed.set(file, built);
 	return built;
 }
@@ -153,12 +177,12 @@ function userText(message: Msg): string {
 	return content.map((block) => (block.type === "text" ? block.text : "")).join("");
 }
 
-/** PROMPTS.md §6's own wrapper, refilled for the fixed token numbers `block()` carries. */
+/** MODEL-FACING-TEXT.md §6's own wrapper, refilled for the fixed token numbers `block()` carries. */
 function summaryOf(id: string, msgs: number, path: string): string {
 	return fenced("6")
 		.replace('block="b5"', `block="${id}"`)
 		.replace('msgs="38"', `msgs="${msgs}"`)
-		.replace('original="~/.cache/pi/context-fold/01a094/b5.txt"', `original="${path}"`)
+		.replace('original="~/.pi/agent/context-fold/01a094/b5.txt"', `original="${path}"`)
 		.replace("…the model's summary text…", "folded work");
 }
 
@@ -190,7 +214,10 @@ function assertNoOrphanResults(messages: Msg[], label: string): void {
 	for (const message of messages) {
 		for (const id of toolCallIds(message)) calls.add(id);
 		if (message.role === "toolResult") {
-			assert.ok(calls.has(message.toolCallId), `${label}: tool result ${message.toolCallId} has no call before it`);
+			assert.ok(
+				calls.has(message.toolCallId),
+				`${label}: tool result ${message.toolCallId} has no call before it`,
+			);
 		}
 	}
 }
@@ -212,7 +239,11 @@ function assertNoStraddle(messages: Msg[], label: string): void {
 			if (at === undefined) continue;
 			for (let between = index + 1; between < at; between++) {
 				const role = (messages[between] ?? assert.fail(`${label}: no message at ${between}`)).role;
-				assert.equal(role, "toolResult", `${label}: a ${role} message sits between call ${id} and its result`);
+				assert.equal(
+					role,
+					"toolResult",
+					`${label}: a ${role} message sits between call ${id} and its result`,
+				);
 			}
 		}
 	}
@@ -249,7 +280,7 @@ function block(fields: Partial<FoldBlock>): FoldBlock {
 		msgs: 0,
 		tokensBefore: 412_000,
 		tokensAfter: 3_100,
-		originalPath: "/home/rmng/.cache/pi/context-fold/01a094/b1.txt",
+		originalPath: "/home/rmng/.pi/agent/context-fold/01a094/b1.txt",
 		timestamp: 1_760_000_000_000,
 		...fields,
 	};
@@ -261,7 +292,15 @@ function customEntry(id: string, customType: string, data: unknown): SessionEntr
 
 function compactionEntry(id: string, parentId: string, firstKeptEntryId: string): SessionEntry {
 	const timestamp = "2026-09-12T00:00:00.000Z";
-	return { type: "compaction", id, parentId, timestamp, summary: "a later compaction", firstKeptEntryId, tokensBefore: 1 };
+	return {
+		type: "compaction",
+		id,
+		parentId,
+		timestamp,
+		summary: "a later compaction",
+		firstKeptEntryId,
+		tokensBefore: 1,
+	};
 }
 
 test("every recorded session replays to Pi's own bytes, twice, over every role Pi projects", () => {
@@ -275,7 +314,11 @@ test("every recorded session replays to Pi's own bytes, twice, over every role P
 		// Nine recorded sessions ran under the extension this one replaces, whose tool is also named
 		// `compress` and carried its span in `content`. Reading those 27 calls as ours retired 54 real
 		// messages: §8 retires our own dead menu result, not another extension's content.
-		assert.deepEqual(staleMenuCalls(view), [], `${file}: another extension's compress call was read as our menu`);
+		assert.deepEqual(
+			staleMenuCalls(view),
+			[],
+			`${file}: another extension's compress call was read as our menu`,
+		);
 		// Invariant 2: the snapshot was taken before the pipeline ran, so a mutation shows up here.
 		assert.equal(out, expected, `${file}: view is not Pi's byte-for-byte`);
 		checked++;
@@ -288,7 +331,11 @@ test("every recorded session replays to Pi's own bytes, twice, over every role P
 		);
 		for (const item of view) roleOf(item.message);
 	}
-	assert.equal(checked, sessionFiles().length, `only ${checked} recorded sessions were replayed byte-for-byte`);
+	assert.equal(
+		checked,
+		sessionFiles().length,
+		`only ${checked} recorded sessions were replayed byte-for-byte`,
+	);
 });
 
 /**
@@ -300,16 +347,30 @@ test("every view item carries its own entry's id, in entry order", () => {
 	for (const file of sessionFiles()) {
 		const entries = contextEntries(file);
 		const ids = new Set(entries.map((entry) => entry.id));
-		assert.ok([...ids].every((id) => id.length > 0), `${file}: an entry has an empty id`);
+		assert.ok(
+			[...ids].every((id) => id.length > 0),
+			`${file}: an entry has an empty id`,
+		);
 		const view = buildView(entries);
 
 		let at = 0;
 		for (const entry of entries) {
 			for (const message of sessionEntryToContextMessages(entry)) {
 				const item = view[at] ?? assert.fail(`${file}: the view stops at ${at}`);
-				assert.ok(ids.has(item.entryId), `${file}: ${item.entryId} is not an id from buildContextEntries`);
-				assert.equal(item.entryId, entry.id, `${file}: item ${at} names ${item.entryId}, not its entry`);
-				assert.equal(JSON.stringify(item.message), JSON.stringify(message), `${file}: item ${at} holds another message`);
+				assert.ok(
+					ids.has(item.entryId),
+					`${file}: ${item.entryId} is not an id from buildContextEntries`,
+				);
+				assert.equal(
+					item.entryId,
+					entry.id,
+					`${file}: item ${at} names ${item.entryId}, not its entry`,
+				);
+				assert.equal(
+					JSON.stringify(item.message),
+					JSON.stringify(message),
+					`${file}: item ${at} holds another message`,
+				);
 				at++;
 			}
 		}
@@ -330,7 +391,10 @@ test("a fold replaces its covered span with one summary", () => {
 
 	// Invariant 1, counted in entries: output = input − covered + one summary.
 	assert.equal(out.length, view.length - covered.length + 1);
-	assert.equal(userText(out[0] ?? assert.fail("no summary emitted")), summaryOf("b1", covered.length, folded.originalPath));
+	assert.equal(
+		userText(out[0] ?? assert.fail("no summary emitted")),
+		summaryOf("b1", covered.length, folded.originalPath),
+	);
 	assert.deepEqual(
 		out.slice(1),
 		view.slice(end + 1).map((item) => item.message),
@@ -342,7 +406,11 @@ test("a fold replaces its covered span with one summary", () => {
 
 	// A compaction cut can take the head of a span out of the view; the summary still lands.
 	const cutHead = block({ entryIds: ["gone-with-the-cut", ...entryIds], msgs: covered.length });
-	assert.equal(JSON.stringify(project(view, [cutHead])), JSON.stringify(out), "a cut span loses its summary");
+	assert.equal(
+		JSON.stringify(project(view, [cutHead])),
+		JSON.stringify(out),
+		"a cut span loses its summary",
+	);
 });
 
 /**
@@ -368,7 +436,11 @@ test("a block whose coverage a later compaction split emits its summary at the f
 	const coveredIds = new Set(covered.map((item) => item.entryId));
 	const at = view.flatMap((item, index) => (coveredIds.has(item.entryId) ? [index] : []));
 	const last = at.at(-1) ?? assert.fail("nothing covered");
-	assert.notEqual(at.length, last - start + 1, "the coverage is contiguous, so this fixture proves nothing");
+	assert.notEqual(
+		at.length,
+		last - start + 1,
+		"the coverage is contiguous, so this fixture proves nothing",
+	);
 
 	const folded = block({ entryIds: [...coveredIds], msgs: covered.length });
 	const out = project(view, [folded]);
@@ -407,7 +479,8 @@ test("every menu entry is whole rounds, so folding one never orphans a result", 
 	const slots = projectSlots(view, []);
 	const answerOf = new Map<string, string>();
 	for (const slot of slots) {
-		if (slot.message.role === "toolResult" && slot.entryId !== undefined) answerOf.set(slot.message.toolCallId, slot.entryId);
+		if (slot.message.role === "toolResult" && slot.entryId !== undefined)
+			answerOf.set(slot.message.toolCallId, slot.entryId);
 	}
 
 	for (const entry of menu.entries) {
@@ -417,14 +490,19 @@ test("every menu entry is whole rounds, so folding one never orphans a result", 
 			for (const id of toolCallIds(slot.message)) {
 				// An aborted turn can leave a call unanswered; pi-ai repairs that direction, not this one.
 				const answer = answerOf.get(id);
-				if (answer !== undefined) assert.ok(inside.has(answer), `${entry.id}: call ${id} is answered outside it`);
+				if (answer !== undefined)
+					assert.ok(inside.has(answer), `${entry.id}: call ${id} is answered outside it`);
 			}
 		}
 	}
 
 	const middle = menu.entries[Math.floor(menu.entries.length / 2)] ?? assert.fail("empty menu");
 	const out = project(view, [block({ entryIds: middle.entryIds, msgs: middle.entryIds.length })]);
-	assert.equal(out.length, view.length - middle.entryIds.length + 1, "a fold removed more than the entry named");
+	assert.equal(
+		out.length,
+		view.length - middle.entryIds.length + 1,
+		"a fold removed more than the entry named",
+	);
 	assertNoOrphanResults(out, "after folding one menu entry");
 	assertNoStraddle(out, "after folding one menu entry");
 });
@@ -449,8 +527,14 @@ test("retiring one tool call keeps its assistant message and the sibling call it
 		survivor.content.some((item) => item.type === "thinking"),
 		false,
 	);
-	assert.equal(out.filter((message) => message.role === "toolResult" && message.toolCallId === dropped).length, 0);
-	assert.equal(out.filter((message) => message.role === "toolResult" && message.toolCallId === sibling).length, 1);
+	assert.equal(
+		out.filter((message) => message.role === "toolResult" && message.toolCallId === dropped).length,
+		0,
+	);
+	assert.equal(
+		out.filter((message) => message.role === "toolResult" && message.toolCallId === sibling).length,
+		1,
+	);
 	assert.equal(out.length, view.length - 1, "only the retired call's result should go");
 	assertNoOrphanResults(out, "rewritten view");
 	assert.equal(snapshot(view), before, "the rewrite mutated an input message");
@@ -471,8 +555,20 @@ function answeredMultiCall(view: ViewItem[]): [Msg, string, string] | undefined 
 
 test("fold-block records read back from the branch, and absorbing a block takes over its entries", () => {
 	const first = block({ id: "b1", entryIds: ["a", "b"], dropToolCallIds: ["call-1"], msgs: 2 });
-	const second = block({ id: "b2", entryIds: ["c"], blockIds: ["b1"], dropToolCallIds: ["call-2"], msgs: 3 });
-	const third = block({ id: "b3", entryIds: ["d"], blockIds: ["b2"], dropToolCallIds: ["call-3"], msgs: 4 });
+	const second = block({
+		id: "b2",
+		entryIds: ["c"],
+		blockIds: ["b1"],
+		dropToolCallIds: ["call-2"],
+		msgs: 3,
+	});
+	const third = block({
+		id: "b3",
+		entryIds: ["d"],
+		blockIds: ["b2"],
+		dropToolCallIds: ["call-3"],
+		msgs: 4,
+	});
 	const entries: SessionEntry[] = [
 		customEntry("foreign", "pi-todo-state", undefined),
 		customEntry("e1", "fold-block", first),
@@ -490,7 +586,10 @@ test("fold-block records read back from the branch, and absorbing a block takes 
 	assert.deepEqual([...(live[0] ?? assert.fail("b2 is not live")).entryIds].sort(), ["a", "b", "c"]);
 	// Without the retired calls, b1's own compress call comes back — and its arguments still carry
 	// the whole summary b1 replaced, so condensing summaries would reclaim nothing.
-	assert.deepEqual([...(live[0] ?? assert.fail("b2 is not live")).dropToolCallIds].sort(), ["call-1", "call-2"]);
+	assert.deepEqual([...(live[0] ?? assert.fail("b2 is not live")).dropToolCallIds].sort(), [
+		"call-1",
+		"call-2",
+	]);
 
 	entries.push(customEntry("e3", "fold-block", third));
 	const chained = liveBlocks({ getBranch: () => entries });
@@ -498,21 +597,29 @@ test("fold-block records read back from the branch, and absorbing a block takes 
 		chained.map((item) => item.id),
 		["b3"],
 	);
-	assert.deepEqual([...(chained[0] ?? assert.fail("b3 is not live")).entryIds].sort(), ["a", "b", "c", "d"]);
-	assert.deepEqual(
-		[...(chained[0] ?? assert.fail("b3 is not live")).dropToolCallIds].sort(),
-		["call-1", "call-2", "call-3"],
-	);
+	assert.deepEqual([...(chained[0] ?? assert.fail("b3 is not live")).entryIds].sort(), [
+		"a",
+		"b",
+		"c",
+		"d",
+	]);
+	assert.deepEqual([...(chained[0] ?? assert.fail("b3 is not live")).dropToolCallIds].sort(), [
+		"call-1",
+		"call-2",
+		"call-3",
+	]);
 });
 
 /**
- * PROMPTS.md §9 and DESIGN §17 rows 19.63-19.64: the line carries only what Pi cannot know, and no
+ * MODEL-FACING-TEXT.md §9 and DESIGN §17 rows 19.63-19.64: the line carries only what Pi cannot know, and no
  * context number at all. Pi's own footer already shows the context, and measured at 80 columns
  * `pi-powerline-footer`'s overflow row silently dropped the longer line entirely.
  */
-test("the status line is PROMPTS.md §9's, and shows no context number", () => {
+test("the status line is MODEL-FACING-TEXT.md §9's, and shows no context number", () => {
 	const shown: string[] = [];
-	const ctx = { ui: { setStatus: (key: string, text: string | undefined) => shown.push(`${key}|${text}`) } };
+	const ctx = {
+		ui: { setStatus: (key: string, text: string | undefined) => shown.push(`${key}|${text}`) },
+	};
 	const blocks: FoldBlock[] = [
 		block({ id: "b1", tokensBefore: 200_000, tokensAfter: 2_000 }),
 		block({ id: "b2", tokensBefore: 60_000, tokensAfter: 2_000 }),
@@ -521,7 +628,7 @@ test("the status line is PROMPTS.md §9's, and shows no context number", () => {
 	];
 
 	setFoldStatus(ctx, blocks);
-	assert.equal(shown[0], `fold|${fenced("9")}`);
+	assert.equal(shown[0], `pi-context-fold|${fenced("9")}`);
 });
 
 const NOW = "2026-09-13T00:00:00.000Z";
@@ -548,7 +655,13 @@ function callMessage(id: string, args: Record<string, unknown>): Msg {
 function resultMessage(callId: string, text: string): Msg {
 	const result = sample("toolResult");
 	if (result.role !== "toolResult") throw new Error("unreachable");
-	return { ...result, toolCallId: callId, toolName: "compress", isError: false, content: [{ type: "text", text }] };
+	return {
+		...result,
+		toolCallId: callId,
+		toolName: "compress",
+		isError: false,
+		content: [{ type: "text", text }],
+	};
 }
 
 interface Recorder {
@@ -561,13 +674,19 @@ interface Recorder {
 }
 
 /** Pi's seams, recorded: the four the extension uses and nothing else. */
-function recorder(entries: SessionEntry[], usage: () => ContextUsage | undefined, cwd = TEST_PROJECT): Recorder {
+function recorder(
+	entries: SessionEntry[],
+	usage: () => ContextUsage | undefined,
+	cwd = TEST_PROJECT,
+): Recorder {
 	const tools: ToolDefinition[] = [];
 	const handlers = new Map<string, (event: unknown, ctx: ExtensionContext) => unknown>();
 	const sent: string[] = [];
 	const pi = {
-		on: (name: string, handler: (event: unknown, ctx: ExtensionContext) => unknown) => handlers.set(name, handler),
+		on: (name: string, handler: (event: unknown, ctx: ExtensionContext) => unknown) =>
+			handlers.set(name, handler),
 		registerTool: (tool: ToolDefinition) => tools.push(tool),
+		registerMessageRenderer: () => undefined,
 		appendEntry: (customType: string, data: unknown) => {
 			entries.push({
 				type: "custom",
@@ -578,8 +697,8 @@ function recorder(entries: SessionEntry[], usage: () => ContextUsage | undefined
 				data,
 			});
 		},
-		sendMessage: (message: { content: { type: string; text?: string }[] }) => {
-			sent.push(message.content.map((part) => part.text ?? "").join(""));
+		sendMessage: (message: { content: string }) => {
+			sent.push(message.content);
 		},
 	};
 	const ctx = {
@@ -614,7 +733,11 @@ function project_(): string {
 const TEST_PROJECT = project_();
 
 /** The extension as Pi runs it: registered, then started, so every test loads its config too. */
-function started(entries: SessionEntry[], usage: () => ContextUsage | undefined, cwd = TEST_PROJECT): Recorder {
+function started(
+	entries: SessionEntry[],
+	usage: () => ContextUsage | undefined,
+	cwd = TEST_PROJECT,
+): Recorder {
 	const run = recorder(entries, usage, cwd);
 	contextFold(run.pi);
 	(run.handlers.get("session_start") ?? assert.fail("no session_start handler"))(undefined, run.ctx);
@@ -642,7 +765,8 @@ async function callCompress(run: Recorder, toolCallId: string, params: unknown):
 function contextMessages(run: Recorder): Msg[] {
 	const handler = run.handlers.get("context") ?? assert.fail("no context handler");
 	const result = handler({ type: "context", messages: [] }, run.ctx);
-	if (typeof result !== "object" || result === null || !("messages" in result)) throw new Error("no messages");
+	if (typeof result !== "object" || result === null || !("messages" in result))
+		throw new Error("no messages");
 	return result.messages as Msg[];
 }
 
@@ -670,7 +794,11 @@ test("rounds partition the view, one per assistant message, and never split a ca
 
 		assert.deepEqual(grouped.flat(), view, `${file}: the rounds are not a partition of the view`);
 		const assistants = view.filter((item) => item.message.role === "assistant").length;
-		assert.equal(grouped.length, assistants, `${file}: ${grouped.length} rounds for ${assistants} assistant messages`);
+		assert.equal(
+			grouped.length,
+			assistants,
+			`${file}: ${grouped.length} rounds for ${assistants} assistant messages`,
+		);
 
 		const roundOf = new Map<Msg, number>();
 		grouped.forEach((round, index) => {
@@ -689,12 +817,20 @@ test("rounds partition the view, one per assistant message, and never split a ca
 			if (item.message.role !== "toolResult") continue;
 			const call = caller.get(item.message.toolCallId);
 			if (call === undefined) continue;
-			assert.equal(roundOf.get(item.message), roundOf.get(call), `${file}: a round boundary splits a call from its result`);
+			assert.equal(
+				roundOf.get(item.message),
+				roundOf.get(call),
+				`${file}: a round boundary splits a call from its result`,
+			);
 		}
 	}
 	// Every session, not "most of them": a floor lets one drop out of the corpus unnoticed, which is
 	// how the byte-equality assertion above came to be measuring 16 of 25.
-	assert.equal(measured, sessionFiles().length, `only ${measured} of ${sessionFiles().length} sessions have a view`);
+	assert.equal(
+		measured,
+		sessionFiles().length,
+		`only ${measured} of ${sessionFiles().length} sessions have a view`,
+	);
 	// 7,358 when the design was written, 7,512 now; the corpus only grows.
 	assert.ok(total >= 7512, `only ${total} rounds across the corpus`);
 });
@@ -710,7 +846,8 @@ test("the menu partitions the foldable view into contiguous entries, evenly by r
 		menu.entries.map((_, index) => `e${index + 1}`),
 	);
 	const chunk = Math.ceil(offered.length / 200);
-	for (const entry of menu.entries.slice(0, -1)) assert.equal(entry.rounds, chunk, "an entry is not one chunk of rounds");
+	for (const entry of menu.entries.slice(0, -1))
+		assert.equal(entry.rounds, chunk, "an entry is not one chunk of rounds");
 	assert.equal(
 		menu.entries.reduce((sum, entry) => sum + entry.rounds, 0),
 		offered.length,
@@ -721,7 +858,10 @@ test("the menu partitions the foldable view into contiguous entries, evenly by r
 		menu.entries.flatMap((entry) => entry.entryIds),
 		offered.flat().map((item) => item.entryId),
 	);
-	assert.equal(menu.tokens, menu.entries.reduce((sum, entry) => sum + entry.tokens, 0));
+	assert.equal(
+		menu.tokens,
+		menu.entries.reduce((sum, entry) => sum + entry.tokens, 0),
+	);
 });
 
 test("the menu offers neither the in-flight round, the one before it, nor a compaction entry", () => {
@@ -729,25 +869,30 @@ test("the menu offers neither the in-flight round, the one before it, nor a comp
 	const offered = new Set(buildMenu(view, []).entries.flatMap((entry) => entry.entryIds));
 	const tail = rounds(view).slice(-2).flat();
 	assert.ok(tail.length > 0, "no tail to exclude");
-	for (const item of tail) assert.equal(offered.has(item.entryId), false, `H1: ${item.entryId} is in the menu`);
+	for (const item of tail)
+		assert.equal(offered.has(item.entryId), false, `H1: ${item.entryId} is in the menu`);
 
 	const { path, hoisted } = pickCompacted();
 	const compacted = buildView(buildContextEntries(path));
 	const ids = new Set(buildMenu(compacted, []).entries.flatMap((entry) => entry.entryIds));
-	assert.ok(compacted.some((item) => item.entryId === hoisted.id), "the fixture has no compaction entry in view");
+	assert.ok(
+		compacted.some((item) => item.entryId === hoisted.id),
+		"the fixture has no compaction entry in view",
+	);
 	assert.equal(ids.has(hoisted.id), false, "a compaction entry was offered");
 });
 
-test("the menu is PROMPTS.md §3a and §3b, verbatim", () => {
+test("the menu is MODEL-FACING-TEXT.md §3a and §3b, verbatim", () => {
 	const menu = buildMenu(buildView(longSession()), []);
 	const lines = menu.text.split("\n");
 	const table = fenced("3", 1).split("\n");
 	const header = table[0] ?? assert.fail("§3b has no heading");
 	const columns = table[2] ?? assert.fail("§3b has no column row");
 
-	assert.ok(PROMPTS.includes(INSTRUCTION), "the instruction is not PROMPTS.md §3a");
+	assert.ok(TEXT.includes(INSTRUCTION), "the instruction is not MODEL-FACING-TEXT.md §3a");
 	assert.ok(menu.text.startsWith(INSTRUCTION), "the menu does not open with the instruction");
-	for (const pinned of [header, columns]) assert.ok(lines.includes(pinned), `the menu does not carry ${JSON.stringify(pinned)}`);
+	for (const pinned of [header, columns])
+		assert.ok(lines.includes(pinned), `the menu does not carry ${JSON.stringify(pinned)}`);
 	// §3b: the example names entries from the table above it, never a constant. A live run folded
 	// `e2–e3` off a fixed example while the table was empty (§17, row 19.54).
 	const [one, two] = menu.entries;
@@ -774,7 +919,7 @@ function example(from: string, to: string): string {
  * A one-entry menu was observed live; with the ids fixed at `e1`/`e2` it invites a fold of `e2`,
  * which is exactly the failure that rewrote this line — the empty menu was only its first form.
  */
-test("PROMPTS.md §3b: a one-entry menu's example names that entry twice, never an id it lacks", () => {
+test("MODEL-FACING-TEXT.md §3b: a one-entry menu's example names that entry twice, never an id it lacks", () => {
 	const menu = buildMenu(rounds(buildView(longSession())).slice(0, 3).flat(), []);
 	const only = menu.entries[0] ?? assert.fail("no entry");
 	assert.equal(menu.entries.length, 1, "the fixture is not a one-entry menu");
@@ -783,7 +928,10 @@ test("PROMPTS.md §3b: a one-entry menu's example names that entry twice, never 
 	assert.equal(last, example(only.id, only.id));
 	const offered = new Set(menu.entries.map((entry) => entry.id));
 	for (const [, named] of last.matchAll(/"(e\d+)"/g)) {
-		assert.ok(named !== undefined && offered.has(named), `the example names ${named}, which is not in the table`);
+		assert.ok(
+			named !== undefined && offered.has(named),
+			`the example names ${named}, which is not in the table`,
+		);
 	}
 });
 
@@ -792,22 +940,31 @@ test("PROMPTS.md §3b: a one-entry menu's example names that entry twice, never 
  * all four live runs — so the two labels are the same label, and printing both reads as a span of
  * two different rounds. The 226-round fixture above has none, which is why it was never caught.
  */
-test("PROMPTS.md §3b: an entry holding one round prints one label, not the same label twice", () => {
+test("MODEL-FACING-TEXT.md §3b: an entry holding one round prints one label, not the same label twice", () => {
 	const menu = buildMenu(rounds(buildView(longSession())).slice(0, 12).flat(), []);
 	const rows = menu.text.split("\n");
 	assert.ok(menu.entries.length > 1, "the fixture is not a table of several entries");
 
 	for (const entry of menu.entries) {
-		assert.equal(entry.rounds, 1, `${entry.id} holds ${entry.rounds} rounds, so the fixture proves nothing`);
+		assert.equal(
+			entry.rounds,
+			1,
+			`${entry.id} holds ${entry.rounds} rounds, so the fixture proves nothing`,
+		);
 		assert.equal(entry.first, entry.last, `${entry.id} holds one round and names two`);
-		const row = rows.find((line) => line.startsWith(`  ${entry.id} `)) ?? assert.fail(`${entry.id} has no row`);
+		const row =
+			rows.find((line) => line.startsWith(`  ${entry.id} `)) ?? assert.fail(`${entry.id} has no row`);
 		assert.ok(row.endsWith(entry.first), `${entry.id}: the row does not end with its label`);
-		assert.equal(row.endsWith(` … ${entry.first}`), false, `${entry.id}: one round still printed "first … last"`);
+		assert.equal(
+			row.endsWith(` … ${entry.first}`),
+			false,
+			`${entry.id}: one round still printed "first … last"`,
+		);
 	}
 });
 
-test("PROMPTS.md §3b-empty: nothing foldable prints no table and no example", () => {
-	assert.equal(fenced("3", 2), EMPTY, "the empty menu is not PROMPTS.md §3b-empty");
+test("MODEL-FACING-TEXT.md §3b-empty: nothing foldable prints no table and no example", () => {
+	assert.equal(fenced("3", 2), EMPTY, "the empty menu is not MODEL-FACING-TEXT.md §3b-empty");
 
 	// Two rounds, both held back by H1 — the shape of the first live run, where five tool calls in
 	// one message left the table empty and a fixed example made the model fold ids that did not exist.
@@ -850,10 +1007,15 @@ test("a menu row is labelled by its first and last round, by primary argument", 
 	// 740 of the corpus's 7,485 rounds make no tool call, and 513 of those sit at a menu entry's edge.
 	assert.ok(fromText > 0, "no row is labelled from a round's text, so §3b's other rule is untested here");
 
-	const writes = menu.entries.filter((entry) => entry.first.startsWith("write: ") || entry.last.startsWith("write: "));
+	const writes = menu.entries.filter(
+		(entry) => entry.first.startsWith("write: ") || entry.last.startsWith("write: "),
+	);
 	for (const entry of writes) {
 		for (const label of [entry.first, entry.last].filter((text) => text.startsWith("write: "))) {
-			assert.ok(label.includes("/") || label.includes("."), `a write row is labelled ${JSON.stringify(label)}`);
+			assert.ok(
+				label.includes("/") || label.includes("."),
+				`a write row is labelled ${JSON.stringify(label)}`,
+			);
 		}
 	}
 	assert.ok(writes.length > 0, "the fixture has no write call to label");
@@ -887,11 +1049,21 @@ function clipped(text: string): string {
 test("a live block's summary is an ordinary menu row that a later fold absorbs", () => {
 	const view = buildView(longSession());
 	const covered = rounds(view)[0]?.map((item) => item.entryId) ?? assert.fail("no first round");
-	const folded = block({ id: "b3", summary: "API exploration\nmore", entryIds: covered, msgs: covered.length });
+	const folded = block({
+		id: "b3",
+		summary: "API exploration\nmore",
+		entryIds: covered,
+		msgs: covered.length,
+	});
 
 	const menu = buildMenu(view, [folded]);
-	const row = menu.entries.find((entry) => entry.blockIds.includes("b3")) ?? assert.fail("b3 is not a menu row");
-	assert.ok(row.first.startsWith('summary b3 "API exploration') || row.last.startsWith('summary b3 "API exploration'), row.first);
+	const row =
+		menu.entries.find((entry) => entry.blockIds.includes("b3")) ?? assert.fail("b3 is not a menu row");
+	assert.ok(
+		row.first.startsWith('summary b3 "API exploration') ||
+			row.last.startsWith('summary b3 "API exploration'),
+		row.first,
+	);
 	assert.equal(
 		menu.entries.flatMap((entry) => entry.entryIds).some((id) => covered.includes(id)),
 		false,
@@ -927,17 +1099,19 @@ test("the menu pair leaves the view a round after it is served; a failed fold st
 	);
 });
 
-/** PROMPTS.md §1 — in every request, so it is the one block whose wording is paid on every turn. */
-test("PROMPTS.md §1: the system prompt block is the document's, pointed at this session's folder", () => {
+/** MODEL-FACING-TEXT.md §1 — in every request, so it is the one block whose wording is paid on every turn. */
+test("MODEL-FACING-TEXT.md §1: the system prompt block is the document's, pointed at this session's folder", () => {
 	const run = started([...longSession()], () => undefined);
 	const handler = run.handlers.get("before_agent_start") ?? assert.fail("no before_agent_start handler");
-	const result = handler({ type: "before_agent_start", systemPrompt: "PI OWNS THIS" }, run.ctx) as { systemPrompt: string };
+	const result = handler({ type: "before_agent_start", systemPrompt: "PI OWNS THIS" }, run.ctx) as {
+		systemPrompt: string;
+	};
 
 	assert.equal(result.systemPrompt, `PI OWNS THIS\n\n${quoted("1").replace("<session>", SESSION_ID)}`);
 });
 
-/** PROMPTS.md §2 — the description and the three parameter descriptions, also in every request. */
-test("PROMPTS.md §2: the tool description and its parameters are the document's", () => {
+/** MODEL-FACING-TEXT.md §2 — the description and the three parameter descriptions, also in every request. */
+test("MODEL-FACING-TEXT.md §2: the tool description and its parameters are the document's", () => {
 	const run = started([...longSession()], () => undefined);
 	const tool = run.tools[0] ?? assert.fail("compress was not registered");
 	assert.equal(run.tools.length, 1, "§6: one tool, and there is no `recall`");
@@ -948,14 +1122,15 @@ test("PROMPTS.md §2: the tool description and its parameters are the document's
 	const bullets = section("2").split("\n");
 	for (const name of ["from", "to", "summary"]) {
 		const head = `- \`${name}\` — `;
-		const bullet = bullets.find((line) => line.startsWith(head)) ?? assert.fail(`§2 has no \`${name}\` bullet`);
+		const bullet =
+			bullets.find((line) => line.startsWith(head)) ?? assert.fail(`§2 has no \`${name}\` bullet`);
 		assert.equal(schema.properties[name]?.description, bullet.slice(head.length).replace(/`/g, ""));
 	}
 });
 
-/** PROMPTS.md §4 and §6, built with the document's own example values so they compare whole. */
-test("PROMPTS.md §4 and §6: the success result and the summary wrapper are the document's", () => {
-	const record = block({ id: "b5", msgs: 38, originalPath: "~/.cache/pi/context-fold/01a094/b5.txt" });
+/** MODEL-FACING-TEXT.md §4 and §6, built with the document's own example values so they compare whole. */
+test("MODEL-FACING-TEXT.md §4 and §6: the success result and the summary wrapper are the document's", () => {
+	const record = block({ id: "b5", msgs: 38, originalPath: "~/.pi/agent/context-fold/01a094/b5.txt" });
 	assert.equal(resultLine(record, "e1", "e37"), flat(quoted("4")).replace(/`/g, ""));
 
 	const message = summaryMessage({ ...record, summary: "…the model's summary text…" });
@@ -975,28 +1150,42 @@ test("compress() serves the menu, folds a span, and the fold leaves nothing stra
 	assert.ok(menu.includes("  e1     "), "no entry table");
 
 	const before = buildMenu(buildView(buildContextEntries(entries)), []).entries.slice(0, 2);
-	messageEntry(entries, "fold-call", callMessage("fold-1", { from: "e1", to: "e2", summary: "what happened" }));
+	messageEntry(
+		entries,
+		"fold-call",
+		callMessage("fold-1", { from: "e1", to: "e2", summary: "what happened" }),
+	);
 	const folded = await callCompress(run, "fold-1", { from: "e1", to: "e2", summary: "what happened" });
 	messageEntry(entries, "fold-result", resultMessage("fold-1", folded));
 
 	const record = liveBlocks({ getBranch: () => entries })[0] ?? assert.fail("no block was recorded");
 	assert.equal(
 		folded,
-		`Folded e1–e2 into **b1**. ${shortTokens(record.tokensBefore)} → ${shortTokens(record.tokensAfter)}, ` +
-			`${record.msgs} messages replaced. Original: ~/.cache/pi/context-fold/${SESSION_ID}/b1.txt`,
+		`Folded e1–e2 into b1. ${shortTokens(record.tokensBefore)} → ${shortTokens(record.tokensAfter)}, ` +
+			`${record.msgs} messages replaced. Original: ${join(agentDir(), "context-fold", SESSION_ID, "b1.txt")}`,
 	);
-	assert.deepEqual(record.entryIds, before.flatMap((entry) => entry.entryIds));
+	assert.deepEqual(
+		record.entryIds,
+		before.flatMap((entry) => entry.entryIds),
+	);
 	assert.deepEqual(record.dropToolCallIds, ["fold-1"]);
 
 	const out = contextMessages(run);
-	const summary = out.filter((message) => message.role === "user" && userText(message).startsWith("<summary block=\"b1\""));
+	const summary = out.filter(
+		(message) => message.role === "user" && userText(message).startsWith('<summary block="b1"'),
+	);
 	assert.equal(summary.length, 1, "one summary, at the block's first covered entry");
 	assert.equal(
-		out.filter((message) => toolCallIds(message).includes("fold-1") || toolCallIds(message).includes("menu-1")).length,
+		out.filter(
+			(message) => toolCallIds(message).includes("fold-1") || toolCallIds(message).includes("menu-1"),
+		).length,
 		0,
 		"the compress pairs are still in the view",
 	);
-	assert.equal(out.filter((message) => message.role === "toolResult" && message.toolCallId === "menu-1").length, 0);
+	assert.equal(
+		out.filter((message) => message.role === "toolResult" && message.toolCallId === "menu-1").length,
+		0,
+	);
 	// 6,654 of the corpus's 7,443 assistant messages carry no text, so the message that made the
 	// compress call holds only that call: retiring it leaves nothing, and nothing is not a message.
 	assert.equal(
@@ -1010,7 +1199,10 @@ test("compress() serves the menu, folds a span, and the fold leaves nothing stra
 	// The record counts what the projection removed, not the span the model named (§16).
 	const view = buildView(buildContextEntries(entries));
 	assert.equal(out.length, view.length - record.msgs - 4 + 1, "msgs does not match what left the view");
-	assert.equal(readFileSync(join(homedir(), ".cache/pi/context-fold", SESSION_ID, "b1.txt"), "utf8").length > 0, true);
+	assert.equal(
+		readFileSync(join(homedir(), ".cache/pi/context-fold", SESSION_ID, "b1.txt"), "utf8").length > 0,
+		true,
+	);
 });
 
 /**
@@ -1026,7 +1218,10 @@ test("a fold's file is the messages it replaced, in order, numbered, arguments a
 	await callCompress(run, "fold-1", { from: "e1", to: "e1", summary: "s" });
 
 	const record = liveBlocks({ getBranch: () => entries })[0] ?? assert.fail("no block");
-	const file = readFileSync(join(homedir(), ".cache/pi/context-fold", SESSION_ID, `${record.id}.txt`), "utf8");
+	const file = readFileSync(
+		join(homedir(), ".cache/pi/context-fold", SESSION_ID, `${record.id}.txt`),
+		"utf8",
+	);
 	const covered = new Set(record.entryIds);
 	const replaced = buildView(buildContextEntries(entries))
 		.filter((item) => covered.has(item.entryId))
@@ -1036,7 +1231,10 @@ test("a fold's file is the messages it replaced, in order, numbered, arguments a
 	assert.equal(replaced.length, record.msgs, "`msgs` counts something other than what was replaced");
 	assert.equal(file, replaced.map(sectionOf).join("\n\n"), "the file is not the messages it replaced");
 	assert.ok(
-		replaced.some((message) => message.role === "assistant" && message.content.some((part) => part.type === "toolCall")),
+		replaced.some(
+			(message) =>
+				message.role === "assistant" && message.content.some((part) => part.type === "toolCall"),
+		),
 		"the fixture has no tool call, so dropped arguments would not show",
 	);
 });
@@ -1062,19 +1260,26 @@ function sectionOf(message: Msg, index: number): string {
 	return `=== ${index + 1} ${message.role}${label} ===\n${body}`;
 }
 
-/** PROMPTS.md §5, read from the document: each failure names the id and the next action (P3). The
+/** MODEL-FACING-TEXT.md §5, read from the document: each failure names the id and the next action (P3). The
  * ids are the document's own, so the messages compare whole rather than by shape. */
-test("compress rejections are PROMPTS.md §5's, and change nothing", async () => {
+test("compress rejections are MODEL-FACING-TEXT.md §5's, and change nothing", async () => {
 	const entries = [...longSession()];
 	const run = started(entries, () => undefined);
 	const unknown = failure("Unknown id");
 	// Before any menu there is no list at all, and the answer is still an error, never the menu (§5).
-	await assert.rejects(() => callCompress(run, "fold-x", { from: "e412", to: "e413", summary: "s" }), { message: unknown });
+	await assert.rejects(() => callCompress(run, "fold-x", { from: "e412", to: "e413", summary: "s" }), {
+		message: unknown,
+	});
 
 	await callCompress(run, "menu-1", {});
 	const menu = buildMenu(buildView(buildContextEntries(entries)), []);
-	assert.ok(menu.entries.length >= 40, `the fixture needs e40, and the menu has ${menu.entries.length} entries`);
-	await assert.rejects(() => callCompress(run, "fold-x", { from: "e1", to: "e412", summary: "s" }), { message: unknown });
+	assert.ok(
+		menu.entries.length >= 40,
+		`the fixture needs e40, and the menu has ${menu.entries.length} entries`,
+	);
+	await assert.rejects(() => callCompress(run, "fold-x", { from: "e1", to: "e412", summary: "s" }), {
+		message: unknown,
+	});
 	// Fix 1 also answers this one — a reversed span covers nothing — but §5 keeps the sharper message.
 	await assert.rejects(() => callCompress(run, "fold-x", { from: "e40", to: "e3", summary: "s" }), {
 		message: failure("`to` before `from`"),
@@ -1113,9 +1318,13 @@ test("a fold whose span a compaction has emptied is refused, and writes nothing"
 	const after = buildView(buildContextEntries(entries)).length;
 	assert.ok(after * 10 < before, `the compaction cut ${before} messages to ${after}, which proves nothing`);
 
-	await assert.rejects(() => callCompress(run, "fold-1", { from: "e1", to: "e3", summary: "what happened" }), {
-		message: "Folding e1–e3 would replace nothing: the list is out of date. Call compress() for the current one.",
-	});
+	await assert.rejects(
+		() => callCompress(run, "fold-1", { from: "e1", to: "e3", summary: "what happened" }),
+		{
+			message:
+				"Folding e1–e3 would replace nothing: the list is out of date. Call compress() for the current one.",
+		},
+	);
 	assert.deepEqual(liveBlocks({ getBranch: () => entries }), [], "the refused fold wrote a record");
 });
 
@@ -1136,7 +1345,8 @@ test("condensing an earlier summary absorbs the block, counts it, and keeps its 
 	messageEntry(entries, "menu-2-result", resultMessage("menu-2", text));
 	const live = liveBlocks({ getBranch: () => entries });
 	const menu = buildMenu(buildView(buildContextEntries(entries)), live);
-	const row = menu.entries.find((entry) => entry.blockIds.includes("b1")) ?? assert.fail("b1 is not a menu row");
+	const row =
+		menu.entries.find((entry) => entry.blockIds.includes("b1")) ?? assert.fail("b1 is not a menu row");
 	const next = menu.entries[menu.entries.indexOf(row) + 1] ?? assert.fail("no row after b1");
 
 	const second = { from: row.id, to: next.id, summary: "second" };
@@ -1151,7 +1361,11 @@ test("condensing an earlier summary absorbs the block, counts it, and keeps its 
 	const b2 = blocks[0] ?? assert.fail("no b2");
 	assert.deepEqual(b2.blockIds, ["b1"]);
 	// §16: `msgs` counts what the projection removed, and the absorbed summary is one of them.
-	assert.equal(b2.msgs, row.entryIds.length + next.entryIds.length + 1, "the absorbed summary was not counted");
+	assert.equal(
+		b2.msgs,
+		row.entryIds.length + next.entryIds.length + 1,
+		"the absorbed summary was not counted",
+	);
 	assert.deepEqual([...b2.dropToolCallIds].sort(), ["fold-1", "fold-2"]);
 
 	const out = contextMessages(run);
@@ -1161,7 +1375,9 @@ test("condensing an earlier summary absorbs the block, counts it, and keeps its 
 		"the absorbed block still emits its own summary",
 	);
 	assert.equal(
-		out.filter((message) => toolCallIds(message).some((id) => id.startsWith("fold-") || id.startsWith("menu-"))).length,
+		out.filter((message) =>
+			toolCallIds(message).some((id) => id.startsWith("fold-") || id.startsWith("menu-")),
+		).length,
 		0,
 		"an absorbed block's compress call is back in the view, and its arguments hold the old summary",
 	);
@@ -1181,7 +1397,11 @@ test("a block whose entries have all left the view emits no summary and does not
 });
 
 function usageOf(tokens: number | null): ContextUsage {
-	return { tokens, contextWindow: 1_000_000, percent: tokens === null ? null : Math.round(tokens / 10_000) };
+	return {
+		tokens,
+		contextWindow: 1_000_000,
+		percent: tokens === null ? null : Math.round(tokens / 10_000),
+	};
 }
 
 test("the nudge is growth from zero, re-anchors only downwards, and skips the round after a fold", async () => {
@@ -1196,7 +1416,7 @@ test("the nudge is growth from zero, re-anchors only downwards, and skips the ro
 	usage = usageOf(200_000);
 	turnEnd(undefined, run.ctx);
 	assert.equal(run.sent.length, 1, "no nudge at the step");
-	// PROMPTS.md §7 whole, with this run's four numbers in place of the document's.
+	// MODEL-FACING-TEXT.md §7 whole, with this run's four numbers in place of the document's.
 	assert.equal(run.sent[0], nudgeOf(entries, "200K of 1.0M", "+200K"));
 
 	usage = usageOf(399_999);
@@ -1239,13 +1459,16 @@ test("a resumed session is nudged on its first turn", () => {
 	assert.equal(run.sent[0], nudgeOf(entries, "800K of 1.0M", "+800K"));
 });
 
-/** PROMPTS.md §7, refilled: the document shows `640K of 1.0M`, `+200K` and a foldable total. */
+/** MODEL-FACING-TEXT.md §7, refilled: the document shows `640K of 1.0M`, `+200K` and a foldable total. */
 function nudgeOf(entries: SessionEntry[], used: string, growth: string): string {
 	const menu = buildMenu(buildView(buildContextEntries(entries)), liveBlocks({ getBranch: () => entries }));
 	return fenced("7")
 		.replace("640K of 1.0M", used)
 		.replace("+200K since", `${growth} since`)
-		.replace("~420K foldable in 199 entries", `~${shortTokens(menu.tokens)} foldable in ${menu.entries.length} entries`);
+		.replace(
+			"~420K foldable in 199 entries",
+			`~${shortTokens(menu.tokens)} foldable in ${menu.entries.length} entries`,
+		);
 }
 
 test("config: a missing file uses the defaults; an unknown key, a wrong type and bad JSON throw", () => {
@@ -1253,13 +1476,14 @@ test("config: a missing file uses the defaults; an unknown key, a wrong type and
 	// DEFAULTS itself, which hands out the shared object and reads no file at all.
 	const defaults = loadConfig(emptyProject());
 	assert.equal(defaults.nudgeGrowthTokens, 200_000);
-	assert.equal(defaults.logFile, join(REAL_HOME, ".pi", "context-fold.log"));
+	assert.equal(defaults.logFile, join(REAL_HOME, ".pi", "agent", "context-fold.log"));
 	assert.equal(defaults.debug, false);
 	assert.throws(() => loadConfig(withConfig({ nudgeGrowthTokns: 50_000 })), {
-		message: /^unknown key "nudgeGrowthTokns" in .*context-fold\.json\. The keys are nudgeGrowthTokens, logFile, debug\.$/,
+		message:
+			/^.*context-fold\.json: unknown key "nudgeGrowthTokns"\. The keys are nudgeGrowthTokens, logFile, debug\.$/,
 	});
 	assert.throws(() => loadConfig(withConfig({ debug: "yes" })), {
-		message: /^"debug" is "yes" in .*context-fold\.json, which that key does not take\.$/,
+		message: /^.*context-fold\.json: "debug" is "yes", which that key does not take\.$/,
 	});
 	const broken = emptyProject();
 	mkdirSync(join(broken, ".pi"));
@@ -1267,29 +1491,43 @@ test("config: a missing file uses the defaults; an unknown key, a wrong type and
 	assert.throws(() => loadConfig(broken), { message: /context-fold\.json is not valid JSON: / });
 
 	// `null` is the documented way to ask for the default log file (§13).
-	assert.equal(loadConfig(withConfig({ logFile: null })).logFile, join(REAL_HOME, ".pi", "context-fold.log"));
+	assert.equal(
+		loadConfig(withConfig({ logFile: null })).logFile,
+		join(REAL_HOME, ".pi", "agent", "context-fold.log"),
+	);
 	assert.equal(loadConfig(withConfig({ nudgeGrowthTokens: 50_000 })).nudgeGrowthTokens, 50_000);
-	assert.equal(loadConfig(emptyProject()).nudgeGrowthTokens, 200_000, "one project's file became the next one's default");
+	assert.equal(
+		loadConfig(emptyProject()).nudgeGrowthTokens,
+		200_000,
+		"one project's file became the next one's default",
+	);
 });
 
 /** Decision 17: the project file wins. Swapping the two reads passes every other test in this file,
  * because none of them writes a home config — and writing one means moving HOME, never the user's. */
 test("config: the project file overrides the home file, key by key", () => {
-	mkdirSync(join(homedir(), ".pi"), { recursive: true });
-	writeFileSync(join(homedir(), ".pi", "context-fold.json"), JSON.stringify({ nudgeGrowthTokens: 111_000, debug: true }));
+	mkdirSync(agentDir(), { recursive: true });
+	writeFileSync(
+		join(agentDir(), "context-fold.json"),
+		JSON.stringify({ nudgeGrowthTokens: 111_000, debug: true }),
+	);
 	try {
 		assert.equal(loadConfig(emptyProject()).nudgeGrowthTokens, 111_000, "the home file was not read");
 		const both = loadConfig(withConfig({ nudgeGrowthTokens: 222_000 }));
 		assert.equal(both.nudgeGrowthTokens, 222_000, "the home file overrode the project's");
 		assert.equal(both.debug, true, "a key only the home file sets was dropped");
 	} finally {
-		rmSync(join(homedir(), ".pi", "context-fold.json"));
+		rmSync(join(agentDir(), "context-fold.json"));
 	}
 });
 
 /** §13: every key has a test that proves its non-default value changes behaviour (#210, #275). */
 test("config: each key's non-default value changes what the extension does", async () => {
-	const dir = withConfig({ nudgeGrowthTokens: 50_000, logFile: join(emptyProject(), "elsewhere.log"), debug: true });
+	const dir = withConfig({
+		nudgeGrowthTokens: 50_000,
+		logFile: join(emptyProject(), "elsewhere.log"),
+		debug: true,
+	});
 	const config = loadConfig(dir);
 	const entries = [...longSession()];
 	const run = started(entries, () => usageOf(60_000), dir);
@@ -1308,7 +1546,11 @@ test("config: each key's non-default value changes what the extension does", asy
 
 	// debug adds the per-round record that the default drops.
 	turnEnd(undefined, run.ctx);
-	assert.match(readFileSync(config.logFile, "utf8"), /"event":"quiet"/, "debug = true logged no quiet round");
+	assert.match(
+		readFileSync(config.logFile, "utf8"),
+		/"event":"quiet"/,
+		"debug = true logged no quiet round",
+	);
 	const quiet = started([...longSession()], () => usageOf(60_000));
 	(quiet.handlers.get("turn_end") ?? assert.fail("no turn_end handler"))(undefined, quiet.ctx);
 	assert.equal(
@@ -1372,7 +1614,10 @@ interface CompactResult {
 	compaction?: CompactionResult;
 }
 
-function compactEvent(entries: SessionEntry[], reason: "manual" | "threshold" | "overflow"): SessionBeforeCompactEvent {
+function compactEvent(
+	entries: SessionEntry[],
+	reason: "manual" | "threshold" | "overflow",
+): SessionBeforeCompactEvent {
 	return {
 		type: "session_before_compact",
 		preparation: {
@@ -1392,7 +1637,8 @@ function compactEvent(entries: SessionEntry[], reason: "manual" | "threshold" | 
 }
 
 function compact(run: Recorder, event: SessionBeforeCompactEvent): CompactResult {
-	const handler = run.handlers.get("session_before_compact") ?? assert.fail("no session_before_compact handler");
+	const handler =
+		run.handlers.get("session_before_compact") ?? assert.fail("no session_before_compact handler");
 	return (handler(event, run.ctx) ?? {}) as CompactResult;
 }
 
@@ -1400,7 +1646,10 @@ function compact(run: Recorder, event: SessionBeforeCompactEvent): CompactResult
 const DUMPED: [string, string][] = [
 	["1,830 messages", "[\\d,]+ messages"],
 	["~412K tokens", "~\\d+(\\.\\d)?[KM] tokens"],
-	["~/.cache/pi/context-fold/overflow/01a094-1789192.txt", "~/\\.cache/pi/context-fold/overflow/\\S+\\.txt"],
+	[
+		"~/.cache/pi/context-fold/overflow/01a094-1789192.txt",
+		"~/\\.cache/pi/context-fold/overflow/\\S+\\.txt",
+	],
 	["<sessionFile>", "\\S+"],
 ];
 
@@ -1421,7 +1670,11 @@ function overflowFile(summary: string): string {
 test("emergency: threshold is cancelled, overflow and manual are answered with our own cut", () => {
 	const entries = [...longSession()];
 	const run = started(entries, () => undefined);
-	assert.deepEqual(compact(run, compactEvent(entries, "threshold")), { cancel: true }, "threshold was not cancelled");
+	assert.deepEqual(
+		compact(run, compactEvent(entries, "threshold")),
+		{ cancel: true },
+		"threshold was not cancelled",
+	);
 
 	for (const reason of ["overflow", "manual"] as const) {
 		const result = compact(run, compactEvent(entries, reason));
@@ -1429,7 +1682,10 @@ test("emergency: threshold is cancelled, overflow and manual are answered with o
 		const compaction = result.compaction ?? assert.fail(`${reason} supplied no compaction`);
 		// Pi's own number, never one of ours (C5).
 		assert.equal(compaction.tokensBefore, 987_654);
-		assert.ok(entries.some((entry) => entry.id === compaction.firstKeptEntryId), "the cut point is not on the branch");
+		assert.ok(
+			entries.some((entry) => entry.id === compaction.firstKeptEntryId),
+			"the cut point is not on the branch",
+		);
 	}
 });
 
@@ -1441,19 +1697,24 @@ test("emergency: the cut keeps the newer half whole and writes the older half ve
 	const weigh = (messages: Msg[]) => messages.reduce((sum, message) => sum + estimateTokens(message), 0);
 	const total = weigh(slots.map((slot) => slot.message));
 
-	const compaction = compact(run, compactEvent(entries, "overflow")).compaction ?? assert.fail("no compaction");
+	const compaction =
+		compact(run, compactEvent(entries, "overflow")).compaction ?? assert.fail("no compaction");
 	const at = view.findIndex((item) => item.entryId === compaction.firstKeptEntryId);
 	assert.ok(at > 0, "the cut kept the whole view");
 	const kept = new Set(view.slice(at).map((item) => item.entryId));
-	const keptMessages = slots.flatMap((slot) => (slot.entryId !== undefined && kept.has(slot.entryId) ? [slot.message] : []));
-	const cut = slots.flatMap((slot) => (slot.entryId === undefined || !kept.has(slot.entryId) ? [slot.message] : []));
+	const keptMessages = slots.flatMap((slot) =>
+		slot.entryId !== undefined && kept.has(slot.entryId) ? [slot.message] : [],
+	);
+	const cut = slots.flatMap((slot) =>
+		slot.entryId === undefined || !kept.has(slot.entryId) ? [slot.message] : [],
+	);
 
 	assert.ok(weigh(cut) * 2 >= total, `freed only ${weigh(cut)} of ${total} tokens`);
 	assert.ok(keptMessages.length > 0, "the cut kept nothing");
 	// H2: the kept side never opens with a result whose call was cut away.
 	assertNoOrphanResults(keptMessages, "after the overflow cut");
 	assert.equal(readFileSync(overflowFile(compaction.summary), "utf8"), cut.map(sectionOf).join("\n\n"));
-	// PROMPTS.md §8's note, less the sentence that only a fully cut block earns. Two values stay
+	// MODEL-FACING-TEXT.md §8's note, less the sentence that only a fully cut block earns. Two values stay
 	// patterns because only the run knows them: the dump's timestamp, and the token total.
 	assert.match(compaction.summary, asPattern(head(note(0)), DUMPED));
 });
@@ -1471,7 +1732,10 @@ test("emergency: our cut point is on the branch by construction, so it never wip
 		const entries = contextEntries(file);
 		const ids = new Set(entries.map((entry) => entry.id));
 		for (const entry of buildContextEntries(entries)) {
-			assert.ok(ids.has(entry.id), `${file}: buildContextEntries returned ${entry.id}, which is not on the branch`);
+			assert.ok(
+				ids.has(entry.id),
+				`${file}: buildContextEntries returned ${entry.id}, which is not on the branch`,
+			);
 		}
 	}
 
@@ -1485,10 +1749,17 @@ test("emergency: our cut point is on the branch by construction, so it never wip
 	);
 
 	const run = started(entries, () => undefined);
-	const compaction = compact(run, compactEvent(entries, "overflow")).compaction ?? assert.fail("no compaction");
-	const good = buildContextEntries([...entries, compactionEntry("ours", leaf.id, compaction.firstKeptEntryId)]);
+	const compaction =
+		compact(run, compactEvent(entries, "overflow")).compaction ?? assert.fail("no compaction");
+	const good = buildContextEntries([
+		...entries,
+		compactionEntry("ours", leaf.id, compaction.firstKeptEntryId),
+	]);
 	assert.ok(good.length > 1, "our own cut point wiped the history");
-	assert.ok(entries.some((entry) => entry.id === compaction.firstKeptEntryId), "the cut point is not on the branch");
+	assert.ok(
+		entries.some((entry) => entry.id === compaction.firstKeptEntryId),
+		"the cut point is not on the branch",
+	);
 });
 
 /**
@@ -1510,7 +1781,10 @@ test("emergency: a one-round view cuts nothing and still answers, rather than th
 	assert.equal(result.cancel, undefined, "the emergency path cancelled");
 	const compaction = result.compaction ?? assert.fail("no compaction");
 	assert.equal(compaction.firstKeptEntryId, "only-u", "the compaction did not keep the whole view");
-	assert.ok(entries.some((entry) => entry.id === compaction.firstKeptEntryId), "the cut point is not on the branch");
+	assert.ok(
+		entries.some((entry) => entry.id === compaction.firstKeptEntryId),
+		"the cut point is not on the branch",
+	);
 });
 
 test("emergency: a block the cut orphans has its own summary carried into the note", async () => {
@@ -1520,14 +1794,26 @@ test("emergency: a block the cut orphans has its own summary carried into the no
 	await callCompress(run, "fold-1", { from: "e1", to: "e1", summary: "what the first phase settled" });
 	const record = liveBlocks({ getBranch: () => entries })[0] ?? assert.fail("no block");
 
-	const compaction = compact(run, compactEvent(entries, "overflow")).compaction ?? assert.fail("no compaction");
+	const compaction =
+		compact(run, compactEvent(entries, "overflow")).compaction ?? assert.fail("no compaction");
 	const kept = new Set(
 		buildView(buildContextEntries(entries))
-			.slice(buildView(buildContextEntries(entries)).findIndex((item) => item.entryId === compaction.firstKeptEntryId))
+			.slice(
+				buildView(buildContextEntries(entries)).findIndex(
+					(item) => item.entryId === compaction.firstKeptEntryId,
+				),
+			)
 			.map((item) => item.entryId),
 	);
-	assert.equal(record.entryIds.some((id) => kept.has(id)), false, "the cut did not orphan the block, so this proves nothing");
-	assert.ok(compaction.summary.includes(tail(note(0))), "the note does not carry §8's sentence about reproduced summaries");
+	assert.equal(
+		record.entryIds.some((id) => kept.has(id)),
+		false,
+		"the cut did not orphan the block, so this proves nothing",
+	);
+	assert.ok(
+		compaction.summary.includes(tail(note(0))),
+		"the note does not carry §8's sentence about reproduced summaries",
+	);
 	assert.ok(
 		compaction.summary.includes(messageText(summaryMessage(record))),
 		"the orphaned block's own summary is not reproduced in the note, verbatim",
@@ -1553,7 +1839,8 @@ test("emergency: a cut whose mark falls inside a round takes the whole round", (
 	messageEntry(entries, "r3", resultMessage("tail-1", "done"));
 
 	const run = started(entries, () => undefined);
-	const compaction = compact(run, compactEvent(entries, "overflow")).compaction ?? assert.fail("no compaction");
+	const compaction =
+		compact(run, compactEvent(entries, "overflow")).compaction ?? assert.fail("no compaction");
 	const view = buildView(buildContextEntries(entries));
 	const at = view.findIndex((item) => item.entryId === compaction.firstKeptEntryId);
 	assert.ok(at > 0, "the cut kept the whole view");
@@ -1565,7 +1852,10 @@ test("emergency: a cut whose mark falls inside a round takes the whole round", (
 function assistantCalling(...ids: string[]): Msg {
 	const assistant = sample("assistant");
 	if (assistant.role !== "assistant") throw new Error("unreachable");
-	return { ...assistant, content: ids.map((id) => ({ type: "toolCall", id, name: "bash", arguments: { command: id } })) };
+	return {
+		...assistant,
+		content: ids.map((id) => ({ type: "toolCall", id, name: "bash", arguments: { command: id } })),
+	};
 }
 
 /**
@@ -1591,7 +1881,8 @@ test("emergency: covered entries before the cut are kept, because keeping them i
 
 	const run = started(entries, () => undefined);
 	run.pi.appendEntry("fold-block", block({ id: "b1", entryIds: ["uB", "aB", "rB"], msgs: 3 }));
-	const compaction = compact(run, compactEvent(entries, "overflow")).compaction ?? assert.fail("no compaction");
+	const compaction =
+		compact(run, compactEvent(entries, "overflow")).compaction ?? assert.fail("no compaction");
 
 	assert.equal(compaction.firstKeptEntryId, "uB", "the cut threw away folded entries it could have kept");
 	const kept = new Set(
@@ -1599,11 +1890,18 @@ test("emergency: covered entries before the cut are kept, because keeping them i
 			.slice(buildView(buildContextEntries(entries)).findIndex((item) => item.entryId === "uB"))
 			.map((item) => item.entryId),
 	);
-	assert.ok(["uB", "aB", "rB"].some((id) => kept.has(id)), "the block lost every entry it covered");
-	assert.equal(compaction.summary.includes("reproduced below"), false, "a block was orphaned that need not have been");
+	assert.ok(
+		["uB", "aB", "rB"].some((id) => kept.has(id)),
+		"the block lost every entry it covered",
+	);
+	assert.equal(
+		compaction.summary.includes("reproduced below"),
+		false,
+		"a block was orphaned that need not have been",
+	);
 });
 
-test("emergency: a failed dump still compacts, with PROMPTS.md §8's other note", () => {
+test("emergency: a failed dump still compacts, with MODEL-FACING-TEXT.md §8's other note", () => {
 	const entries = [...longSession()];
 	const run = started(entries, () => undefined);
 	const home = process.env.HOME;
@@ -1612,7 +1910,8 @@ test("emergency: a failed dump still compacts, with PROMPTS.md §8's other note"
 	writeFileSync(join(fake, ".cache/pi/context-fold/overflow"), "not a directory");
 	process.env.HOME = fake;
 	try {
-		const compaction = compact(run, compactEvent(entries, "overflow")).compaction ?? assert.fail("no compaction");
+		const compaction =
+			compact(run, compactEvent(entries, "overflow")).compaction ?? assert.fail("no compaction");
 		assert.match(
 			compaction.summary,
 			asPattern(note(1), [
@@ -1622,7 +1921,10 @@ test("emergency: a failed dump still compacts, with PROMPTS.md §8's other note"
 				["<sessionFile>", "\\S+"],
 			]),
 		);
-		assert.ok(entries.some((entry) => entry.id === compaction.firstKeptEntryId), "the cut point is not on the branch");
+		assert.ok(
+			entries.some((entry) => entry.id === compaction.firstKeptEntryId),
+			"the cut point is not on the branch",
+		);
 	} finally {
 		process.env.HOME = home;
 		rmSync(fake, { recursive: true, force: true });
@@ -1650,7 +1952,14 @@ test("emergency: with no boundary freeing half, the cut keeps only the newest ro
 	const grouped = rounds(slots);
 	assert.equal(grouped.length, 2, "the fixture is not two rounds");
 	assert.ok(
-		weigh(grouped.slice(0, -1).flat().map((slot) => slot.message)) * 2 < weigh(slots.map((slot) => slot.message)),
+		weigh(
+			grouped
+				.slice(0, -1)
+				.flat()
+				.map((slot) => slot.message),
+		) *
+			2 <
+			weigh(slots.map((slot) => slot.message)),
 		"a boundary frees half here, so the fixture proves nothing",
 	);
 
@@ -1666,10 +1975,18 @@ test("emergency: a log that cannot be written still yields a compaction", () => 
 	const dir = withConfig({ logFile: emptyProject() });
 	const entries = [...longSession()];
 	const run = started(entries, () => undefined, dir);
-	assert.throws(() => appendFileSync(loadConfig(dir).logFile, "x"), { code: "EISDIR" }, "the log write did not fail");
+	assert.throws(
+		() => appendFileSync(loadConfig(dir).logFile, "x"),
+		{ code: "EISDIR" },
+		"the log write did not fail",
+	);
 
-	const compaction = compact(run, compactEvent(entries, "overflow")).compaction ?? assert.fail("no compaction");
-	assert.ok(entries.some((entry) => entry.id === compaction.firstKeptEntryId), "the cut point is not on the branch");
+	const compaction =
+		compact(run, compactEvent(entries, "overflow")).compaction ?? assert.fail("no compaction");
+	assert.ok(
+		entries.some((entry) => entry.id === compaction.firstKeptEntryId),
+		"the cut point is not on the branch",
+	);
 });
 
 test("one token format, Pi's own footer rule", () => {

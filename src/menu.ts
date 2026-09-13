@@ -1,7 +1,7 @@
 import { estimateTokens } from "@earendil-works/pi-coding-agent";
-import { messageText } from "./dump";
-import { projectSlots, shortTokens } from "./project";
-import type { FoldBlock, Msg, Slot, ViewItem } from "./types";
+import { messageText } from "./dump.ts";
+import { projectSlots, shortTokens } from "./project.ts";
+import type { FoldBlock, Msg, Slot, ViewItem } from "./types.ts";
 
 const MENU_MAX = 200;
 const LABEL_MAX = 40;
@@ -57,7 +57,8 @@ export function rounds<T extends { message: Msg }>(items: T[]): T[][] {
 	let pending: Set<string> | undefined;
 	for (const item of items) {
 		const message = item.message;
-		const answers = pending !== undefined && message.role === "toolResult" && pending.has(message.toolCallId);
+		const answers =
+			pending !== undefined && message.role === "toolResult" && pending.has(message.toolCallId);
 		if (pending !== undefined && !answers) {
 			out.push(current);
 			current = [];

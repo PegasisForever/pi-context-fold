@@ -1,12 +1,15 @@
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
-import type { FoldBlock } from "./types";
+import type { FoldBlock } from "./types.ts";
 
 // `getBranch()`, never `buildContextEntries()`: the latter drops everything before a compaction cut,
 // which would silently unfold every block older than it (§17.2). The cast is decision 29.
-export function liveBlocks(sessionManager: Pick<ExtensionContext["sessionManager"], "getBranch">): FoldBlock[] {
+export function liveBlocks(
+	sessionManager: Pick<ExtensionContext["sessionManager"], "getBranch">,
+): FoldBlock[] {
 	const records: FoldBlock[] = [];
 	for (const entry of sessionManager.getBranch()) {
-		if (entry.type === "custom" && entry.customType === "fold-block") records.push(entry.data as FoldBlock);
+		if (entry.type === "custom" && entry.customType === "fold-block")
+			records.push(entry.data as FoldBlock);
 	}
 	return absorb(records);
 }

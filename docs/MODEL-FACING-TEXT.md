@@ -82,7 +82,7 @@ Injected on `before_agent_start`. In every request.
 > lists what can be folded.
 >
 > Everything you have folded in this session is written to
-> `~/.cache/pi/context-fold/<session>/` as plain text, one file per block. Search that folder before
+> `~/.pi/agent/context-fold/<session>/` as plain text, one file per block. Search that folder before
 > you ask the user to repeat something — the answer is usually already there.
 
 **≈ 75 tokens.** The original is ≈ 1,400.
@@ -265,8 +265,8 @@ That is a correctness argument, not a stylistic one.
 
 ## 4. `compress(...)` → success
 
-> Folded e1–e37 into **b5**. 412K → 3.1K, 38 messages replaced. Original:
-> `~/.cache/pi/context-fold/01a094/b5.txt`
+> Folded e1–e37 into b5. 412K → 3.1K, 38 messages replaced. Original:
+> `~/.pi/agent/context-fold/01a094/b5.txt`
 
 Carries the block id, the real span, and the path. Their issue #376 is exactly the first two
 missing: *"the compress result lacks new block ids and actual ref spans, so the model's
@@ -311,7 +311,7 @@ Failed calls and their results stay in the conversation untouched. No collapsing
 Replaces the folded span, permanently, in every later request.
 
 ```
-<summary block="b5" msgs="38" tokens="412K→3.1K" original="~/.cache/pi/context-fold/01a094/b5.txt">
+<summary block="b5" msgs="38" tokens="412K→3.1K" original="~/.pi/agent/context-fold/01a094/b5.txt">
 …the model's summary text…
 </summary>
 ```
@@ -341,11 +341,11 @@ find again by parsing, without a regex over prose.
 At most twice a day on this workload. Appended at the end of the view.
 
 ```
-<context-manager>
+<pi-context-fold>
 640K of 1.0M used, +200K since the last check. ~420K foldable in 199 entries.
 
 Call compress() for the list and the rules for using it.
-</context-manager>
+</pi-context-fold>
 ```
 
 **43 tokens**, measured, down from ~140 in the previous draft. It keeps only what the menu cannot
@@ -368,7 +368,7 @@ prefix would double the framing.
 
 > `This session overflowed its context window, so the older half was removed from view
 > rather than summarised. Those 1,830 messages (~412K tokens) were written verbatim to
-> ~/.cache/pi/context-fold/overflow/01a094-1789192.txt — read or grep that file to retrieve
+> ~/.pi/agent/context-fold/overflow/01a094-1789192.txt — read or grep that file to retrieve
 > any of it — or read the session log at <sessionFile>, which still holds every original.
 > Summaries you wrote for folded spans in that half are reproduced below.`
 >
@@ -396,10 +396,41 @@ If the file write failed:
 
 ## 9. Not model-facing
 
-The footer line is for the human and never reaches the model:
+Everything below is written for the person at the TUI. None of it reaches the model, because
+Pi carries it in a tool result's `details` or draws it from a renderer, and neither is sent
+to the provider. So this half costs no tokens.
+
+The footer status, under the key `pi-context-fold`, which `pi-powerline-footer` can give its
+own segment:
 
 ```
 folded 312K, 4 blocks
+```
+
+A `compress()` call that asked for the menu, and its result. The menu itself is ~5.4K tokens
+of ids and guidance, and reading it is the model's job, so you get its size instead:
+
+```
+compress
+199 entries listed, ~420K foldable.
+```
+
+A `compress(...)` call that folded a span, and its result. The path is left out, because the
+summary in the view already carries it:
+
+```
+compress e1–e37
+Folded e1–e37 into b5.
+412K → 3.1K, 38 messages replaced.
+```
+
+The nudge, labelled so it is not read as the model's own words:
+
+```
+[pi-context-fold]
+
+640K of 1.0M used, +200K since the last check.
+~420K foldable in 199 entries.
 ```
 
 ---

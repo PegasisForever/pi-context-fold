@@ -1,35 +1,52 @@
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
-import { type FoldState, registerCompress } from "./compress";
-import { type Config, DEFAULTS, loadConfig } from "./config";
-import { registerEmergency } from "./emergency";
-import { log, logDebug } from "./log";
-import { buildMenu } from "./menu";
-import { projectSlots, shortTokens } from "./project";
-import { liveBlocks } from "./state";
-import { setFoldStatus } from "./status";
-import type { FoldBlock } from "./types";
-import { buildView } from "./view";
+import { type FoldState, registerCompress } from "./compress.ts";
+import { DEFAULTS, loadConfig } from "./config.ts";
+import { blocksDir } from "./dump.ts";
+import { registerEmergency } from "./emergency.ts";
+import { log, logDebug } from "./log.ts";
+import { buildMenu } from "./menu.ts";
+import { projectSlots, shortTokens } from "./project.ts";
+import { labelled, type Shown } from "./shown.ts";
+import { liveBlocks } from "./state.ts";
+import { setFoldStatus } from "./status.ts";
+import type { FoldBlock } from "./types.ts";
+import { buildView } from "./view.ts";
+
+/** The tag on every message this extension injects, and the name on every renderer it registers. */
+const NAME = "pi-context-fold";
 
 export default function contextFold(pi: ExtensionAPI): void {
-	const state: FoldState = { menu: undefined, folded: false, baseline: 0, config: DEFAULTS, reported: new Set() };
+	const state: FoldState = {
+		menu: undefined,
+		folded: false,
+		baseline: 0,
+		config: DEFAULTS,
+		reported: new Set(),
+	};
 
 	pi.on("context", (_event, ctx) => ({
-		messages: projectSlots(buildView(ctx.sessionManager.buildContextEntries()), liveBlocks(ctx.sessionManager)).map(
-			(slot) => slot.message,
-		),
+		messages: projectSlots(
+			buildView(ctx.sessionManager.buildContextEntries()),
+			liveBlocks(ctx.sessionManager),
+		).map((slot) => slot.message),
 	}));
 
 	pi.on("before_agent_start", (event, ctx) => ({
 		systemPrompt: `${event.systemPrompt}\n\n${systemPrompt(ctx.sessionManager.getSessionId())}`,
 	}));
 
-	registerCompress(pi, state);
+	// No tool of its own, so it is registered where every other handler is.
 	registerEmergency(pi, state);
+
+	pi.registerMessageRenderer<Shown>(NAME, (message, _options, theme) =>
+		labelled(theme, NAME, message.details?.lines ?? []),
+	);
 
 	// §13, read once. A throw here reaches the user as `Extension error (<path>): …` — measured, in
 	// both print and interactive mode — and the session then runs on the defaults.
 	pi.on("session_start", (_event, ctx) => {
 		state.config = loadConfig(ctx.sessionManager.getCwd());
+		registerCompress(pi, state);
 	});
 
 	// Reporting and every decision happen here, never in the `context` handler, which stays a pure
@@ -78,21 +95,22 @@ function nudge(pi: ExtensionAPI, ctx: ExtensionContext, state: FoldState): void 
 		return;
 	}
 
-	const menu = buildMenu(buildView(ctx.sessionManager.buildContextEntries()), liveBlocks(ctx.sessionManager));
+	const menu = buildMenu(
+		buildView(ctx.sessionManager.buildContextEntries()),
+		liveBlocks(ctx.sessionManager),
+	);
 	const pressure = `${shortTokens(predicted)} of ${shortTokens(usage.contextWindow)} used, +${shortTokens(growth)} since the last check.`;
 	const foldable = `~${shortTokens(menu.tokens)} foldable in ${menu.entries.length} entries.`;
+	// followUp and triggerTurn: the fold happens now, in a turn of its own, rather than waiting for
+	// the user's next message. It costs one model call each time the nudge fires.
 	pi.sendMessage(
 		{
-			customType: "context-fold-nudge",
-			content: [
-				{
-					type: "text",
-					text: `<context-manager>\n${pressure} ${foldable}\n\nCall compress() for the list and the rules for using it.\n</context-manager>`,
-				},
-			],
+			customType: NAME,
+			content: `<${NAME}>\n${pressure} ${foldable}\n\nCall compress() for the list and the rules for using it.\n</${NAME}>`,
+			details: { lines: [pressure, foldable] },
 			display: true,
 		},
-		{ triggerTurn: false },
+		{ deliverAs: "followUp", triggerTurn: true },
 	);
 	state.baseline = predicted;
 	log(state.config, "nudge", { predicted, growth, foldable: menu.tokens, entries: menu.entries.length });
@@ -107,6 +125,6 @@ older parts of the conversation into summaries you write. \`compress()\` with no
 lists what can be folded.
 
 Everything you have folded in this session is written to
-\`~/.cache/pi/context-fold/${sessionId}/\` as plain text, one file per block. Search that folder before
+\`${blocksDir(sessionId)}/\` as plain text, one file per block. Search that folder before
 you ask the user to repeat something — the answer is usually already there.`;
 }

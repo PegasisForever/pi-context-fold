@@ -1,9 +1,16 @@
 import { mkdirSync, writeFileSync } from "node:fs";
-import { homedir } from "node:os";
 import { dirname, join } from "node:path";
-import type { Msg } from "./types";
+import { getAgentDir } from "@earendil-works/pi-coding-agent";
+import type { Msg } from "./types.ts";
 
-const CACHE = ".cache/pi/context-fold";
+/**
+ * Beside the sessions these blocks belong to, so `PI_CODING_AGENT_DIR` moves both together.
+ * Read on every call, never cached: the test suite moves `HOME` so its dumps land in its own.
+ */
+const root = (): string => join(getAgentDir(), "context-fold");
+
+/** Where every block this session has folded is written: the folder the model is told to search. */
+export const blocksDir = (sessionId: string): string => join(root(), sessionId);
 
 /**
  * The folded original, verbatim, one section per message (§6). This is what replaces the `recall`
@@ -12,22 +19,21 @@ const CACHE = ".cache/pi/context-fold";
  * cannot be used here — the file has to match what left the view.
  */
 export function writeOriginal(sessionId: string, blockId: string, messages: Msg[]): void {
-	write(`${sessionId}/${blockId}.txt`, messages);
+	write(originalPath(sessionId, blockId), messages);
 }
 
 export function originalPath(sessionId: string, blockId: string): string {
-	return `~/${CACHE}/${sessionId}/${blockId}.txt`;
+	return join(blocksDir(sessionId), `${blockId}.txt`);
 }
 
 /** The overflow dump (§8): the same format, so one reader serves both files. */
 export function writeOverflow(sessionId: string, timestamp: number, messages: Msg[]): string {
-	const relative = `overflow/${sessionId}-${timestamp}.txt`;
-	write(relative, messages);
-	return `~/${CACHE}/${relative}`;
+	const path = join(root(), "overflow", `${sessionId}-${timestamp}.txt`);
+	write(path, messages);
+	return path;
 }
 
-function write(relative: string, messages: Msg[]): void {
-	const path = join(homedir(), CACHE, relative);
+function write(path: string, messages: Msg[]): void {
 	mkdirSync(dirname(path), { recursive: true });
 	writeFileSync(path, messages.map(section).join("\n\n"), "utf8");
 }

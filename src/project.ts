@@ -1,4 +1,4 @@
-import type { FoldBlock, Msg, Slot, ViewItem } from "./types";
+import type { FoldBlock, Msg, Slot, ViewItem } from "./types.ts";
 
 export const TOOL_NAME = "compress";
 
@@ -41,7 +41,8 @@ export function staleMenuCalls(view: ViewItem[]): string[] {
 		stale.push(...served);
 		served = [];
 		for (const part of message.content) {
-			if (part.type === "toolCall" && part.name === TOOL_NAME && noArguments(part.arguments)) served.push(part.id);
+			if (part.type === "toolCall" && part.name === TOOL_NAME && noArguments(part.arguments))
+				served.push(part.id);
 		}
 	}
 	return stale;

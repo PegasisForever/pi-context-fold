@@ -1,6 +1,7 @@
 # pi-context-fold — design
 
-Clean-room rewrite. Personal tool, single user, not for publication.
+Clean-room rewrite. Personal tool, single user, published as is: no support, and no promise
+that anything here stays the same (C1).
 Unrelated to any other project.
 Host: Pi `@earendil-works/pi-coding-agent` 0.85.1.
 
@@ -88,7 +89,7 @@ Everything in §17 is what those reviews changed.
 | 14 | The nudge trigger is **growth**: re-nudge every `nudgeGrowthTokens`, default 200,000 (§8). |
 | 15 | No benefit floor. |
 | 16 | No environment variables. |
-| 17 | Per-project `<project>/.pi/context-fold.json` overrides `~/.pi/context-fold.json`. |
+| 17 | Per-project `<project>/.pi/context-fold.json` overrides `~/.pi/agent/context-fold.json`. |
 | 18 | No summary length limit. |
 | 19 | **The view is built from session entries, not from `event.messages`** (§3). Forced by a measured fact, see §17, row 19.1. |
 | 20 | *(superseded by 21 — there is no meter of our own; `ctx.getContextUsage()` is the number.)* |
@@ -100,7 +101,7 @@ Everything in §17 is what those reviews changed.
 | 27 | **Nothing is protected.** No mechanism exempts any message from folding; the instruction returned with the menu carries the judgement instead (§4b, §9). |
 | 28 | The `context` handler **never throws**. A record it cannot use is skipped and logged; every other fold still applies (§3). |
 | 29 | **Permanent, not provisional (§17, row 19.58):** `liveBlocks` casts a record rather than validating it. The only writer is our own code in one version and C1 forbids back-compatibility, so a validator has no evidence (C10). A malformed record would crash the handler and send the unfolded history; the protection is social until step 5. |
-| 26 | System-authored text follows Pi's own markup convention: `<summary …>` for folds, `<context-manager>` for the nudge, nothing for the overflow note (Pi wraps it). No `[context]` prefix anywhere — bracket markup on message content is what the model imitated in the original. |
+| 26 | System-authored text follows Pi's own markup convention: `<summary …>` for folds, `<pi-context-fold>` for the nudge, nothing for the overflow note (Pi wraps it). No `[context]` prefix anywhere — bracket markup on message content is what the model imitated in the original. |
 
 **Open.** Nothing.
 
@@ -221,7 +222,7 @@ keeping it while dropping its `read` call emits an orphan tool result — the on
 pi-ai does not repair. Both are deleted (§17, row 19.39).
 
 What replaced them is **information, not enforcement** (C8). The instruction returned with
-the menu (PROMPTS.md §3a) names two things to keep out of a span — whatever the current step
+the menu (MODEL-FACING-TEXT.md §3a) names two things to keep out of a span — whatever the current step
 is reading, and a skill's instructions while still working under them — and one thing to
 **carry forward verbatim**: a standing requirement, acceptance criterion or constraint the
 user gave.
@@ -235,7 +236,7 @@ assumed.
 Three things make this safe rather than reckless:
 
 - **Nothing is destroyed.** Every fold writes its original to
-  `~/.cache/pi/context-fold/<session>/<blockId>.txt`, and the folder is greppable.
+  `~/.pi/agent/context-fold/<session>/<blockId>.txt`, and the folder is greppable.
 - **A folded skill is trivially re-readable.** Pi puts each skill's `<location>` in the
   system prompt (`skills.js:289-295`), so the model can re-read the file it folded.
 - **A summary the model wrote itself** is far more likely to carry its own standing
@@ -352,7 +353,7 @@ exempt from folding (§4b).
 This replaces the `recall` tool entirely (§17, row 19.35).
 
 When a fold lands, we already hold the content being folded. Write it to
-`~/.cache/pi/context-fold/<sessionId>/<blockId>.txt` — plain text, one section per message — and end
+`~/.pi/agent/context-fold/<sessionId>/<blockId>.txt` — plain text, one section per message — and end
 the summary message with the path.
 
 The model then has two capabilities it did not have with a fetch tool:
@@ -435,9 +436,28 @@ original were stale refs and weak models, and both are excluded here (§17, row 
 
 If the log ever shows failed calls accumulating, we add the collapse then (C10).
 
+### Two texts — one for the model, one for you
+
+Every tool result and every injected message carries two texts. The model's is `content`,
+which is sent to the provider and costs tokens. Yours is `details`, which Pi hands to the
+renderer and never sends, so it costs nothing.
+
+They are not the same text, and they must not be. The menu is ~5.4K tokens of entry ids and
+folding guidance written for a model that is about to choose a span; printing it in the
+terminal fills the screen with something you have no use for. So `compress()` with no
+arguments shows you one line — how many entries, how much is foldable — and a fold shows you
+what it replaced and by how much, without the file path the summary in the view already
+carries. `docs/MODEL-FACING-TEXT.md` §9 holds both, side by side, so the split can be
+audited without reading the code.
+
+`renderCall` and `renderResult` are what make this possible: a tool with neither gets Pi's
+fallback rendering, which prints the model's own text.
+
 ### Status — one line, for the human
 
-`ctx.ui.setStatus(key, text)` gives us a slot in Pi's own footer (`types.d.ts:80`):
+`ctx.ui.setStatus(key, text)` gives us a slot in Pi's own footer (`types.d.ts:80`). **The
+key is `pi-context-fold`**, the extension's own name, so `pi-powerline-footer` can lift it
+into a segment of its own with a `customItems` entry naming that key:
 
 ```
 folded 312K, 4 blocks
@@ -544,7 +564,7 @@ There is no benefit floor. The model decides whether a fold is worth making; we 
 when to ask.
 
 **The nudge is 48 tokens** — the pressure and the prompt to act, nothing else. Exact text in
-`PROMPTS.md` §7.
+`docs/MODEL-FACING-TEXT.md` §7.
 
 The folding guidance is in the **menu**, not here (§17, row 19.41). §18 measures 6 nudges
 across 26 sessions, so most sessions never see one — while a fold is impossible without the
@@ -553,6 +573,14 @@ issued. The menu is the only mandatory waypoint before a fold.
 
 Cadence: at most one nudge per round, and none in the round straight after a fold. Keyed to
 the round, never to the user prompt.
+
+**The nudge starts a turn of its own**, delivered with `deliverAs: "followUp"` and
+`triggerTurn: true`. The first version queued it instead and let the model read it on the
+user's next message, which is free but leaves the fold undone until the user happens to
+type. Waking the model costs one model call per nudge; §18 measures 6 nudges across 26
+sessions, so the price is small and it buys a fold that happens when the pressure does. It
+is also the delivery rule pi-background uses for a finished job, and one rule across both
+extensions is worth more than a saved call.
 
 ### Overflow — `session_before_compact`
 
@@ -592,13 +620,13 @@ interface CompactionResult { summary: string; firstKeptEntryId: string;
    hardest exactly when the model has been folding, which is the case this project exists
    for.
 2. Write everything before it to
-   `~/.cache/pi/context-fold/overflow/<sessionId>-<timestamp>.txt` — plain text, one section per
+   `~/.pi/agent/context-fold/overflow/<sessionId>-<timestamp>.txt` — plain text, one section per
    message.
 3. Return `{ summary: note, firstKeptEntryId, tokensBefore }` where the note is:
    `[context] Overflow. The older half of this session (~412K, 1,830 messages) was written to <path>. Use read to retrieve any of it.`
 
    The cut **does** orphan blocks in the older half, deliberately. Each fully-cut block's
-   own summary is reproduced verbatim in the note, which is what PROMPTS §8 specified all
+   own summary is reproduced verbatim in the note, which is what MODEL-FACING-TEXT §8 specified all
    along and what makes the recovery coherent without a model call.
 
 Pi writes the compaction entry and, with `willRetry`, re-runs the turn.
@@ -703,14 +731,14 @@ real handler chain delivers, with `pi-goal-x` installed, or it will pass while b
 
 ## 13. Config
 
-`~/.pi/context-fold.json`, overridden by `<project>/.pi/context-fold.json`. Files only —
+`~/.pi/agent/context-fold.json`, overridden by `<project>/.pi/context-fold.json`. Files only —
 **no environment variables**. **Read once at `session_start`.** No mtime reload: one user
 with three keys restarts the session.
 
 ```jsonc
 {
   "nudgeGrowthTokens": 200000,
-  "logFile": null,               // default ~/.pi/context-fold.log
+  "logFile": null,               // default ~/.pi/agent/context-fold.log
   "debug": false
 }
 ```
@@ -746,7 +774,7 @@ Deliberately **not** configurable, each for a stated reason:
 
 Every string the model sees — system prompt, tool descriptions and schemas, the menu, all
 tool results, the nudge, the fold prefix, the overflow note — is specified in
-**`PROMPTS.md`**, with its token budget and its per-request cost.
+**`docs/MODEL-FACING-TEXT.md`**, with its token budget and its per-request cost.
 
 Per-request cost of that text: **≈ 160 tokens** (system prompt + one tool schema). The
 original, measured rather than estimated: **3,704 tokens of system prompt in every
@@ -846,7 +874,7 @@ means only reasoning supports it.
 | A fold that would replace nothing is refused | the stale-menu case, reproduced and tested |
 | Blocks absorb correctly | chains of three, already-absorbed ids, entries already gone |
 | Replay is deterministic | same log twice, identical state |
-| Model-facing strings match this project's contract | §1, §2, §4, §5, §6, §7, §8 read from `PROMPTS.md`, not copied |
+| Model-facing strings match this project's contract | §1, §2, §4, §5, §6, §7, §8 read from `docs/MODEL-FACING-TEXT.md`, not copied |
 
 44 tests. Across seven audit rounds, roughly **250 mutations** were run against the tree; the
 survivors are listed in §17 and each is either equivalent or now covered.
@@ -863,7 +891,7 @@ loaded: 19 context events, 0 provider errors.
 
 | | Evidence |
 |---|---|
-| It builds and installs | `npm run build` (23.6 KB bundle), `pi install <path>` records the path; `private: true` and the missing `files` field are harmless because a local install copies nothing and Pi rewrites the peer imports to its own copies |
+| It builds and installs | `pi install <path>` records the path and Pi loads `src/index.ts` directly, so there is no build step; `private: true` and the missing `files` field are harmless because a local install copies nothing and Pi rewrites the peer imports to its own copies |
 | The built bundle behaves identically to the source | both loaded in one process, driven through all 25 sessions — **0 differences** in prompt, projection, menu, status, nudge and compaction |
 | It works in the owner's real extension set | `pi-lens`, `pi-goal-x`, `pi-powerline-footer`, `pi-mcp-adapter` all loaded; four folds, 33,970 → 20,113 tokens, no other extension misbehaved |
 | Removing it is safe | a session with four folds and a compaction, re-run with the extension gone: 122 entries → 118 messages, all 34 tool results present, the model answered correctly. Folding is a view transformation only |
@@ -884,7 +912,7 @@ loaded: 19 context events, 0 provider errors.
 ### What would make it trustworthy
 
 Run it on a session you can afford to lose, with `debug: true`, and read
-`~/.pi/context-fold.log`. The three things worth watching: whether folds actually reclaim what
+`~/.pi/agent/context-fold.log`. The three things worth watching: whether folds actually reclaim what
 they claim, whether the model ever folds something it then needs back, and whether the nudge
 fires at a sensible moment.
 
@@ -941,10 +969,10 @@ fires at a sensible moment.
 | 19.35 | `recall` tool | originals written to a file at fold time, path on the summary | smaller surface *and* the model gains `grep` across everything folded |
 | 19.36 | Collapse older failures to one line | leave all failures untouched | machinery for a case whose two causes are both excluded |
 | 19.37 | Folding guidance in the system prompt | moved to the nudge | later in context, and paid twice a day instead of every request |
-| 19.38 | `[context]` prefix, invented | Pi's own `<summary>` / `<context-manager>` elements | bracket markup on content is what the model echoed in the original; and Pi already taught it what `<summary>` means |
+| 19.38 | `[context]` prefix, invented | Pi's own `<summary>` / `<pi-context-fold>` elements | bracket markup on content is what the model echoed in the original; and Pi already taught it what `<summary>` means |
 | 19.39 | Protected content, two drafts of it | nothing is protected; the instruction says what not to fold | a skill load is a tool result, so exempting it orphans the result; C8 says fix the information |
 | 19.40 | A throw in the `context` handler | never throw; skip the unusable record | `emitContext` catches and sends the **unfolded** history, which overflows a folded session |
-| 19.41 | Folding guidance in the nudge | in the menu (PROMPTS.md §3a, 423 tok) | the nudge fires in 6 of 26 sessions; the menu is mandatory before any fold |
+| 19.41 | Folding guidance in the nudge | in the menu (MODEL-FACING-TEXT.md §3a, 423 tok) | the nudge fires in 6 of 26 sessions; the menu is mandatory before any fold |
 | 19.42 | "do not fold standing requirements" | "quote them verbatim in the summary" | an entry spans ~34 rounds and there is no exclusion mechanism, so avoidance is not executable |
 | 19.43 | "ours and Pi's numbers diverge permanently; that is the diagnostic" | they are identical by construction; the comparison is a cross-check | measured identical on 23/23 sessions — both use the same anchor and the same estimator |
 | 19.44 | "folded blocks are unaffected" by overflow | *(superseded by 19.47)* | |
@@ -960,7 +988,7 @@ fires at a sensible moment.
 | 19.65 | "throws only when no cut exists" | never throws; a one-round view returns a no-op compaction and Pi reports the failure | a throw hands the turn to Pi's raw summariser — the D5 disaster — so printed-and-fatal beats nothing only in appearance |
 | 19.64 | `fold N blocks · NK folded` | `folded 312K, 4 blocks` | the reclaimed total is the number worth reading first; `fold` as a bare prefix said nothing the numbers did not |
 | 19.63 | The status line shows a context number | it shows blocks and folded tokens only | it duplicated Pi's own footer, and at 80 columns `pi-powerline-footer`'s overflow row silently dropped the whole line — measured |
-| 19.61 | A fold-orphan check, and PROMPTS §5's row for it | deleted | with one span per call the case is unrepresentable; the `turn_end` log still *reports* a block without a summary, which is observation, not enforcement — C4, C10 |
+| 19.61 | A fold-orphan check, and MODEL-FACING-TEXT §5's row for it | deleted | with one span per call the case is unrepresentable; the `turn_end` log still *reports* a block without a summary, which is observation, not enforcement — C4, C10 |
 | 19.62 | "the emergency handler must never throw" | it never *cancels*; it throws only when no cut exists, and keeps two deliberate catches | a cancel is a silent dead turn, and deleting the log catch routes a log failure into the raw summariser |
 | 19.59 | `compress` takes an array of spans | one span per call | the model never batched in any live run, and the array produced three defects; one span makes them unrepresentable — C10, C4 |
 | 19.60 | `halfway` throws when no boundary frees half, and the handler cancels | fall back to the last boundary; delete the catch | a cancelled automatic compaction is a silently dead turn, and the design says "never cancel" |
