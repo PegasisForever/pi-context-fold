@@ -27,8 +27,12 @@ different instruction from every other harness, and the reason this one can be s
 
 - **Almost nothing to see.** No command, no on/off switch. One footer line, and one row
   per fold. It manages itself.
-- When context has grown by 200K tokens, a 43-token nudge is delivered and starts a turn, so
-  the fold happens then rather than waiting for your next message.
+- When context has grown by 200K tokens, a 147-token nudge is added to the conversation. It
+  reports the pressure and says what is worth folding; the model decides. Nothing is required
+  of it, and it does not interrupt what you are doing.
+- Once there is no room left for another nudge, the last one says so and asks for the fold.
+  That is the only one that starts a turn of its own, because after it the window fills and
+  the older half of the session is cut from view with no summary.
 - The model calls `compress()` with no arguments and gets a menu — the foldable conversation
   partitioned into at most 200 contiguous entries, `e1…e200`.
 - It picks a span and writes a summary. That span leaves the view, replaced by
@@ -128,11 +132,11 @@ add"*.
   times. No session has run long enough to exercise it naturally.
 - **Folding costs prompt cache** by construction — the measured median retained prefix after
   a fold is 33%. Whether the trade pays over a month is unmeasured.
-- The nudge starts a turn of its own, so a fold costs one model call you did not ask for.
+- Only the last nudge starts a turn of its own, so at most one fold costs a model call you did not ask for.
 
 ## Size
 
-**914 lines of source, 4 tests.** One tool, no config, no slash command.
+**949 lines of source, 4 tests.** One tool, no config, no slash command.
 
 The extension it replaces is ~9,950 lines. Roughly 250 mutations were run against this tree
 across seven review rounds; §17 records what each one changed.

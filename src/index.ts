@@ -91,30 +91,61 @@ function nudge(pi: ExtensionAPI, ctx: ExtensionContext, state: FoldState): void 
 		buildView(ctx.sessionManager.buildContextEntries()),
 		liveBlocks(ctx.sessionManager),
 	);
+	// A nudge needs NUDGE_GROWTH_TOKENS of growth to fire, so with less than that left in the window
+	// there is no room for another one: this is the last warning before the overflow cut (§7).
+	const last = usage.contextWindow - predicted < NUDGE_GROWTH_TOKENS;
 	const pressure = `${shortTokens(predicted)} of ${shortTokens(usage.contextWindow)} used, +${shortTokens(growth)} since the last check.`;
 	const foldable = `~${shortTokens(menu.tokens)} foldable in ${menu.entries.length} entries.`;
-	// followUp and triggerTurn: the fold happens now, in a turn of its own, rather than waiting for
-	// the user's next message. It costs one model call each time the nudge fires.
+	// A turn of its own only for the last nudge, which has to be acted on before the next overflow.
+	// An ordinary nudge reports and waits: it is read at the start of the next turn either way, and
+	// waking the model to tell it that nothing is required costs a model call for nothing.
 	pi.sendMessage(
 		{
 			customType: NAME,
-			content: `<${NAME}>\n${pressure} ${foldable}\n\nCall compress() for the list and the rules for using it.\n</${NAME}>`,
-			details: { lines: [pressure, foldable] },
+			content: `<${NAME}>\n${pressure} ${foldable}\n\n${last ? LAST_NUDGE : NUDGE}\n</${NAME}>`,
+			details: {
+				lines: last
+					? [pressure, foldable, "Last nudge before the overflow cut."]
+					: [pressure, foldable],
+			},
 			display: true,
 		},
-		{ deliverAs: "followUp", triggerTurn: true },
+		{ deliverAs: "followUp", triggerTurn: last },
 	);
 	state.baseline = predicted;
-	log("nudge", { predicted, growth, foldable: menu.tokens, entries: menu.entries.length });
+	log("nudge", { predicted, growth, foldable: menu.tokens, entries: menu.entries.length, last });
 }
+
+/**
+ * MODEL-FACING-TEXT.md §7. Neutral: it reports pressure and hands the decision back. What it carries
+ * is what the model needs to decide *whether* to fold, which it cannot get from the menu without
+ * paying 5.4K tokens for it first. The rules for picking the exact span and writing the summary stay
+ * in the menu, where they are read at the moment they apply (§3a).
+ */
+const NUDGE = `Fold only if there is finished work in the way: exploration that led nowhere, tool output
+you have already used, a phase whose result is recorded. Nothing is destroyed — what you
+fold is written to a file and stays searchable — and a fold costs one menu call plus the
+summary you write. If nothing qualifies, carry on with the work; this is reported again
+after another ${shortTokens(NUDGE_GROWTH_TOKENS)} of growth.
+
+compress() lists the spans, with the rules for choosing one and writing its summary.`;
+
+/** MODEL-FACING-TEXT.md §7. The same report when no second one can fire, so it asks for the fold. */
+const LAST_NUDGE = `There is no room left for another report, so this is the last one. When the window fills,
+the older half of this session is removed from view uncompressed: it is written to a file
+and stays searchable, but nothing summarises it for you. Fold now, and fold everything
+that is finished: exploration that led nowhere, tool output you have already used, a
+phase whose result is recorded.
+
+compress() lists the spans, with the rules for choosing one and writing its summary.`;
 
 /** PROMPTS.md §1, in every request. The folder line is the one habit worth its tokens everywhere. */
 function systemPrompt(sessionId: string): string {
 	return `### Context
 
-This session manages its own context. When it grows large you will be asked to fold
-older parts of the conversation into summaries you write. \`compress()\` with no arguments
-lists what can be folded.
+This session manages its own context. When it grows large you will be told how much of it
+is old enough to fold; folding replaces older parts of the conversation with summaries you
+write, and it is yours to decide. \`compress()\` with no arguments lists what can be folded.
 
 Everything you have folded in this session is written to
 \`${blocksDir(sessionId)}/\` as plain text, one file per block. Search that folder before

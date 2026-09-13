@@ -122,7 +122,9 @@ function clip(text: string, max: number = LABEL_MAX): string {
 	return text.length <= max ? text : `${text.slice(0, max - 1)}…`;
 }
 
-/** PROMPTS.md §3a and §3b, in that order: the folding guidance, then the entries it applies to. An
+/** PROMPTS.md §3a and §3b, in that order: the folding guidance, then the entries it applies to. What
+ * qualifies for a fold at all is in the nudge instead, because that decision is made before this
+ * call is paid for; what is here is what picking a span and writing a summary need. An
  * empty table takes §3b-empty alone — the guidance is for choosing a span, and there is none. */
 function render(entries: MenuEntry[]): string {
 	const first = entries[0];
@@ -142,20 +144,18 @@ const COLUMNS = "  id     rounds  tokens  first … last";
 export const EMPTY = `Nothing is foldable yet — every round so far is still in flight or immediately behind the
 one in flight. Ask again when the conversation is longer.`;
 
-export const INSTRUCTION = `Choosing the span. Fold what is finished: exploration that led nowhere, tool output you
-have already used, a phase whose result is recorded. Keep out what the current step is
-still reading, and any instructions you are still working under. A fold reissues the entry
-ids, so call compress() again for a fresh list before folding again.
+export const INSTRUCTION = `Choosing the span. Keep out what the current step is still reading, and any instructions
+you are still working under. A fold reissues the entry ids, so call compress() again for a
+fresh list before folding again.
 
 User messages may be folded like anything else. But a requirement, constraint or
 acceptance criterion the user gave you must be quoted verbatim in the summary: it still
 binds afterwards, and the summary becomes the only place it stays in view.
 
-Writing the summary. You are its reader, later in this session, and nothing is destroyed —
-the text you fold is written to a file and stays searchable. So write an index into
-recoverable text rather than a replacement for it: carry the conclusions you would
-otherwise have to derive again, and say enough about the rest to know when the file is
-worth opening.
+Writing the summary. You are its reader, later in this session, and the original stays on
+disk. So write an index into recoverable text rather than a replacement for it: carry the
+conclusions you would otherwise have to derive again, and say enough about the rest to know
+when the file is worth opening.
 
 Keep verbatim, because these are the search keys into that file and a paraphrase cannot be
 grepped: full paths with line numbers, identifiers and signatures, error strings, versions,

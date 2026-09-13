@@ -86,7 +86,7 @@ Everything in §17 is what those reviews changed.
 | 11 | No on/off switch. To disable it, uninstall it. |
 | 12 | No `contextLimit` key. Pi already overrides a window per model in `~/.pi/agent/models.json`. |
 | 13 | No `protectedTools` and no `protectSkills` keys. Nothing is protected at all (27). |
-| 14 | The nudge trigger is **growth**: re-nudge every `nudgeGrowthTokens`, default 200,000 (§8). |
+| 14 | The nudge trigger is **growth**: re-nudge every `NUDGE_GROWTH_TOKENS`, 200,000 (§8). |
 | 15 | No benefit floor. |
 | 16 | No environment variables. |
 | 17 | Per-project `<project>/.pi/context-fold.json` overrides `~/.pi/agent/context-fold.json`. |
@@ -481,11 +481,11 @@ limit. Deleted with the rest (C3).
 
 ### Normal pressure — at `turn_end`
 
-Nudge once `predicted` has grown by `nudgeGrowthTokens` since the last nudge — growth, not
+Nudge once `predicted` has grown by `NUDGE_GROWTH_TOKENS` since the last nudge — growth, not
 a fraction of the limit.
 
 ```
-nudge when  predicted − baseline ≥ nudgeGrowthTokens
+nudge when  predicted − baseline ≥ NUDGE_GROWTH_TOKENS
 ```
 
 No clamp on the step. The first draft capped it at 25% of the window for a 128K-window
@@ -515,24 +515,34 @@ that is the reason, and it is the whole reason.
 There is no benefit floor. The model decides whether a fold is worth making; we only decide
 when to ask.
 
-**The nudge is 43 tokens** — the pressure and the prompt to act, nothing else. Exact text in
-`docs/MODEL-FACING-TEXT.md` §7.
+**The nudge is 147 tokens, and it is a report, not an order.** It states the pressure and
+hands the decision back: fold if something in the way is finished, otherwise carry on. That
+is the same rule as the paragraph above — the model decides whether a fold is worth making —
+applied to the text instead of only to the code. A nudge that demands a fold gets one whether
+or not anything is finished, and a summary written over live work costs more than it saves.
 
-The folding guidance is in the **menu**, not here (§17, row 19.41). §18 measures 6 nudges
-across 26 sessions, so most sessions never see one — while a fold is impossible without the
-menu, because entry ids are reissued on every fold and validated against the menu last
-issued. The menu is the only mandatory waypoint before a fold.
+**What the nudge carries is what the decision needs**: what qualifies as foldable, that
+nothing is destroyed, and what a fold costs. Those were in the menu until now, which put them
+behind a 5.4K tool call the model had to pay before it could tell whether it wanted to make
+it. What stays in the menu is what the *next* decision needs — which span, and what the
+summary must contain (§17, row 19.67). Neither text is duplicated; exact text and the cost of
+the split are in `docs/MODEL-FACING-TEXT.md` §3c and §7.
 
 Cadence: at most one nudge per round, and none in the round straight after a fold. Keyed to
 the round, never to the user prompt.
 
-**The nudge starts a turn of its own**, delivered with `deliverAs: "followUp"` and
-`triggerTurn: true`. The first version queued it instead and let the model read it on the
-user's next message, which is free but leaves the fold undone until the user happens to
-type. Waking the model costs one model call per nudge; §18 measures 6 nudges across 26
-sessions, so the price is small and it buys a fold that happens when the pressure does. It
-is also the delivery rule pi-background uses for a finished job, and one rule across both
-extensions is worth more than a saved call.
+**The last nudge is different.** A nudge needs `NUDGE_GROWTH_TOKENS` of growth to fire, so once
+`contextWindow − predicted` falls below that, no second nudge can arrive before the overflow
+cut. That one says so and asks for the fold. It is a fact about the arithmetic, not a second
+threshold to tune.
+
+**Only the last nudge starts a turn of its own**, with `deliverAs: "followUp"` and
+`triggerTurn: true`; an ordinary nudge is queued and read at the start of the next turn. The
+first version woke the model on every nudge, on the grounds that a queued nudge leaves the
+fold undone until the user happens to type. That argument holds for a message the model must
+act on and no longer holds for one it may ignore: waking it to say that nothing is required
+spends a model call on nothing. pi-background wakes the model for a finished background job
+and still should — the user is waiting on that result. Nobody is waiting on this one.
 
 ### Overflow — `session_before_compact`
 
@@ -879,7 +889,7 @@ fires at a sensible moment.
 | 19.38 | `[context]` prefix, invented | Pi's own `<summary>` / `<pi-context-fold>` elements | bracket markup on content is what the model echoed in the original; and Pi already taught it what `<summary>` means |
 | 19.39 | Protected content, two drafts of it | nothing is protected; the instruction says what not to fold | a skill load is a tool result, so exempting it orphans the result; C8 says fix the information |
 | 19.40 | A throw in the `context` handler | never throw; skip the unusable record | `emitContext` catches and sends the **unfolded** history, which overflows a folded session |
-| 19.41 | Folding guidance in the nudge | in the menu (MODEL-FACING-TEXT.md §3a, 423 tok) | the nudge fires in 6 of 26 sessions; the menu is mandatory before any fold |
+| 19.41 | Folding guidance in the nudge | in the menu (MODEL-FACING-TEXT.md §3a) — *split again, see 19.67* | the nudge fires in 6 of 26 sessions; the menu is mandatory before any fold |
 | 19.42 | "do not fold standing requirements" | "quote them verbatim in the summary" | an entry spans ~34 rounds and there is no exclusion mechanism, so avoidance is not executable |
 | 19.43 | "ours and Pi's numbers diverge permanently; that is the diagnostic" | they are identical by construction; the comparison is a cross-check | measured identical on 23/23 sessions — both use the same anchor and the same estimator |
 | 19.44 | "folded blocks are unaffected" by overflow | *(superseded by 19.47)* | |
@@ -891,6 +901,8 @@ fires at a sensible moment.
 | 19.50 | "menu tokens are excluded from the growth measurement" | they are not; the menu result just leaves the view next round | the arithmetic was wrong (20K, not 200K) and Pi's single number has nothing to subtract from |
 | 19.51 | A "hold the summary until no call is pending" condition | complete the closure's transitivity instead | the mid-round case becomes unrepresentable rather than handled — C4 |
 | 19.52 | "excluding compaction entries makes coverage contiguous" | it does not; coverage can split regardless | a span with no compaction entry, contiguous when folded, splits when a newer compaction hoists past an older one |
+| 19.68 | Every nudge wakes the model with `triggerTurn: true` | only the last one does | a message the model may ignore is not worth a model call; the rule it was copied from is pi-background's finished job, where the user is waiting on the result |
+| 19.67 | All folding guidance in the menu (19.41) | split: what qualifies for a fold is in the nudge, span and summary rules stay in the menu | deciding *whether* to fold happens before the menu is paid for, so the rules for that decision sat behind the 5.4K call the model needed them to judge |
 | 19.66 | Validate `firstKeptEntryId` against `branchEntries` | deleted | the cut point comes from `buildContextEntries()`, a subset of the branch, so a bad id is unrepresentable — and the check's only action was a throw, which 19.65 forbids |
 | 19.65 | "throws only when no cut exists" | never throws; a one-round view returns a no-op compaction and Pi reports the failure | a throw hands the turn to Pi's raw summariser — the D5 disaster — so printed-and-fatal beats nothing only in appearance |
 | 19.64 | `fold N blocks · NK folded` | `folded 312K, 4 blocks` | the reclaimed total is the number worth reading first; `fold` as a bare prefix said nothing the numbers did not |

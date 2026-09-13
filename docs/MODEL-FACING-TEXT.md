@@ -12,13 +12,14 @@ Every string this extension puts in front of the model. Companion to
 | Layer | When | Cost | Carries |
 |---|---|---|---|
 | System prompt | every request, cached | ≤ 80 tok | that context is self-managed, the one tool, the folded-content folder |
-| Nudge | ~twice a day, fresh, late in context | ≤ 60 tok | the pressure, and the prompt to act |
-| Menu | only when asked, **mandatory before any fold** | ~5.4K tok | the entries, and all the folding guidance (§3a) |
+| Nudge | ~twice a day, fresh, late in context | ≤ 150 tok | the pressure, and what deciding whether to fold needs (§7) |
+| Menu | only when asked, **mandatory before any fold** | ~5.4K tok | the entries, and what picking a span and writing a summary need (§3a) |
 
-The folding guidance sits in the **menu**, not the system prompt and not the nudge. It is
-read immediately before the model writes a summary, it is paid only when a fold is actually
-happening, and unlike the nudge it cannot be missed — a fold is impossible without the menu.
-§3c has the measurement that settled this.
+The folding guidance is split by the decision it serves. **Whether to fold at all** is decided
+before the menu is called, so what that decision needs is in the nudge: what qualifies as
+foldable, that nothing is destroyed, and what a fold costs. **Which span, and what the summary
+must say** is decided with the table in front of the model, so it stays in the menu, paid only
+when a fold is actually happening. §3c has the reasoning, and what the split costs.
 
 **P2. C2 — write for a model that reads carefully.** No shouting, no repetition, no
 restating a rule three ways. The original's system prompt is 86 lines and repeats its
@@ -77,23 +78,25 @@ Injected on `before_agent_start`. In every request.
 
 > ### Context
 >
-> This session manages its own context. When it grows large you will be asked to fold
-> older parts of the conversation into summaries you write. `compress()` with no arguments
-> lists what can be folded.
+> This session manages its own context. When it grows large you will be told how much of it
+> is old enough to fold; folding replaces older parts of the conversation with summaries you
+> write, and it is yours to decide. `compress()` with no arguments lists what can be folded.
 >
 > Everything you have folded in this session is written to
 > `~/.pi/agent/context-fold/<session>/` as plain text, one file per block. Search that folder before
 > you ask the user to repeat something — the answer is usually already there.
 
-**121 tokens**, with a real session id in the path. The original is ≈ 1,400.
+**133 tokens**, with a real session id in the path. The original is ≈ 1,400. *"It is yours to
+decide"* is there because the nudge is a report and not an order (§7): the model reads the
+nudge once and this block in every request, so this is where the standing expectation is set.
 
 What is absent, and why:
 
 | Absent | Why |
 |---|---|
 | "a summary is a record, not an instruction" | the `<summary>` tag says it, and Pi's own compaction already taught the model what that tag means (P5) |
-| When and how to fold | moved to the nudge (P1) |
-| How to write a summary | moved to the nudge (P1) |
+| What qualifies for a fold | in the nudge, where the decision is made (§3c) |
+| How to pick a span, how to write a summary | in the menu, where the entries are (§3a) |
 | The menu format | the menu says so itself (P4) |
 | `recall` | there is no such tool; the folder is the interface |
 | Tier 1/2/3 rules | one tier |
@@ -140,26 +143,24 @@ harder to get wrong and validate separately, for ~15 tokens per request.
 
 ## 3. `compress()` with no arguments → the menu
 
-Only when asked. ~5.4K tokens. **This is where the folding guidance lives** — see the note
-below on why it is here rather than in the nudge.
+Only when asked. ~5.4K tokens. **This is where the span and summary guidance lives.** What
+qualifies for a fold at all is in the nudge instead (§7); see §3c.
 
 ### 3a. The instruction, above the entry table
 
 ```
-Choosing the span. Fold what is finished: exploration that led nowhere, tool output you
-have already used, a phase whose result is recorded. Keep out what the current step is
-still reading, and any instructions you are still working under. A fold reissues the entry
-ids, so call compress() again for a fresh list before folding again.
+Choosing the span. Keep out what the current step is still reading, and any instructions
+you are still working under. A fold reissues the entry ids, so call compress() again for a
+fresh list before folding again.
 
 User messages may be folded like anything else. But a requirement, constraint or
 acceptance criterion the user gave you must be quoted verbatim in the summary: it still
 binds afterwards, and the summary becomes the only place it stays in view.
 
-Writing the summary. You are its reader, later in this session, and nothing is destroyed —
-the text you fold is written to a file and stays searchable. So write an index into
-recoverable text rather than a replacement for it: carry the conclusions you would
-otherwise have to derive again, and say enough about the rest to know when the file is
-worth opening.
+Writing the summary. You are its reader, later in this session, and the original stays on
+disk. So write an index into recoverable text rather than a replacement for it: carry the
+conclusions you would otherwise have to derive again, and say enough about the rest to know
+when the file is worth opening.
 
 Keep verbatim, because these are the search keys into that file and a paraphrase cannot be
 grepped: full paths with line numbers, identifiers and signatures, error strings, versions,
@@ -175,7 +176,8 @@ conversation. No fixed sections — thematic headers if the span covers several 
 dense bullets, whatever length the span needs.
 ```
 
-**433 tokens**, measured with Pi's own `estimateTokens`. Compare the prior art: `billion-context-pi`'s system
+**388 tokens**, measured with Pi's own `estimateTokens` — 433 before the two sentences that
+qualify a fold moved to the nudge. Compare the prior art: `billion-context-pi`'s system
 prompt is **3,704 tokens in every request**, and its nudge adds 1,366 of which 1,179
 duplicate the system prompt verbatim.
 
@@ -239,27 +241,35 @@ Nothing is foldable yet — every round so far is still in flight or immediately
 one in flight. Ask again when the conversation is longer.
 ```
 
-No table, no example, **and no §3a instruction**: 433 tokens of guidance on choosing a span
+No table, no example, **and no §3a instruction**: 388 tokens of guidance on choosing a span
 is waste when there is no span to choose (P1), and the paragraph alone reads as a complete
 answer. An example naming ids that do not exist is what caused the model to fold `e2–e3` in
 that run (C8 — the failure was our information, not the model).
 
-### 3c. Why the guidance is here and not in the nudge
+### 3c. Why the split falls where it does
 
-An earlier draft moved it to the nudge, on the grounds that the nudge arrives late in
-context and is paid twice a day instead of every request. The first half of that is right;
-the second half was answered by measurement.
+There are two decisions, and each needs different text at a different moment.
 
-DESIGN §18 measures **6 nudges across 26 sessions in three days, and no session nudged
-twice** at `nudgeGrowthTokens = 200,000`. So roughly 20 of 26 sessions never see a nudge —
-while the model can still fold in those sessions, because §1 tells it the tool exists.
+**Whether to fold at all** is decided when the nudge arrives, before anything has been paid.
+If the rules for it are in the menu, the model has to spend a tool call and ~5.4K tokens to
+learn what it would have been choosing between — and if the answer is "nothing here is
+finished", that call was waste. So what qualifies as foldable, that folding destroys nothing,
+and what a fold costs are in the nudge (§7).
 
-The menu has no such gap. **A fold is impossible without it**: entry ids are reissued on
-every fold and validated against the menu we last issued, so the model cannot name a valid
-span it has not just been given. The menu is the only mandatory waypoint before a fold, and
-it lands as the last thing in context before the summary is written.
+**Which span, and what the summary must contain** is decided with the table in front of the
+model. That text is read immediately before the summary is written and is paid only on the
+turns where a fold actually happens, so it stays here (§3a).
 
-That is a correctness argument, not a stylistic one.
+**What the split costs.** A model can call `compress()` with no nudge — §1 tells it the tool
+exists — and DESIGN §18 measures **6 nudges across 26 sessions in three days**, so most folds
+happen on that path. Those folds no longer see the positive half of the selection rule. The
+half that keeps a fold *safe* — keep out what the current step is still reading, keep out the
+instructions you are working under, quote user requirements verbatim — stays in the menu,
+which is the mandatory waypoint: entry ids are reissued on every fold and validated against
+the menu we last issued, so no fold can skip it.
+
+So the risky half is on the mandatory path and the qualifying half is on the path where the
+decision is actually made. Neither text is duplicated.
 
 ---
 
@@ -338,19 +348,58 @@ find again by parsing, without a regex over prose.
 
 ## 7. The nudge
 
-At most twice a day on this workload. Appended at the end of the view.
+At most twice a day on this workload. Appended at the end of the view. **It is a report, not
+an order**: pressure is a fact about the session, and whether any of it is worth folding is a
+judgement only the model can make from the work in front of it. A nudge that demands a fold
+gets one whether or not anything is finished, and a summary written over live work costs more
+than the tokens it saves.
 
 ```
 <pi-context-fold>
 640K of 1.0M used, +200K since the last check. ~420K foldable in 199 entries.
 
-Call compress() for the list and the rules for using it.
+Fold only if there is finished work in the way: exploration that led nowhere, tool output
+you have already used, a phase whose result is recorded. Nothing is destroyed — what you
+fold is written to a file and stays searchable — and a fold costs one menu call plus the
+summary you write. If nothing qualifies, carry on with the work; this is reported again
+after another 200K of growth.
+
+compress() lists the spans, with the rules for choosing one and writing its summary.
 </pi-context-fold>
 ```
 
-**43 tokens**, measured, down from ~140 in the previous draft. It keeps only what the menu cannot
-supply: the pressure, and the prompt to act. The guidance moved to §3a for the reason in
-§3c — the nudge fires in 6 of 26 sessions, the menu is read before every fold.
+**147 tokens**, measured, up from 43. The extra 104 buy the decision itself: without them the
+model cannot tell whether folding is worth a 5.4K menu call, and the cheapest way to find out
+is to make the call. It does **not** start a turn of its own — the model reads it at the start
+of its next turn either way, and waking the model to tell it that nothing is required spends a
+model call on nothing.
+
+The 200K figure is interpolated from `NUDGE_GROWTH_TOKENS`, so the sentence cannot drift from
+the constant that produces it.
+
+### 7a. The last nudge
+
+A nudge needs 200K of growth to fire, so once the window has less than that left, no second
+nudge can arrive before the overflow cut. That one is a warning, and it says so. It is the
+only nudge that starts a turn of its own, because there may be no ordinary turn left in which
+to act on it.
+
+```
+<pi-context-fold>
+910K of 1.0M used, +200K since the last check. ~420K foldable in 199 entries.
+
+There is no room left for another report, so this is the last one. When the window fills,
+the older half of this session is removed from view uncompressed: it is written to a file
+and stays searchable, but nothing summarises it for you. Fold now, and fold everything
+that is finished: exploration that led nowhere, tool output you have already used, a
+phase whose result is recorded.
+
+compress() lists the spans, with the rules for choosing one and writing its summary.
+</pi-context-fold>
+```
+
+**147 tokens**, measured. It states the consequence rather than the urgency: §8 is what
+actually happens next, and the model can weigh that better than it can weigh the word "urgent".
 
 The prior art shows the cost of getting this wrong: `acp-kernel` ships its 1,179-token
 rules in the system prompt **and** again in full inside every nudge.
@@ -439,16 +488,16 @@ The nudge, labelled so it is not read as the model's own words:
 
 | | Tokens |
 |---|---|
-| **Every request** (system prompt + one tool schema) | **193** |
-| Per nudge | 43 |
-| Per menu | ~5,400 (433 of it instruction) |
+| **Every request** (system prompt + one tool schema) | **205** |
+| Per nudge | 147, either kind |
+| Per menu | ~5,355 (388 of it instruction) |
 | Per fold | ~50 result + ~30 permanent prefix |
 
 The original, **measured** rather than estimated: **3,704 tokens of system prompt in every
 request**, plus four tool schemas, plus a ref tag on every message in context, plus 1,366
 tokens per nudge of which 1,179 repeat the system prompt verbatim.
 
-Ours: **193 tokens per request**, and the 433-token instruction is paid only on the turns
+Ours: **205 tokens per request**, and the 388-token instruction is paid only on the turns
 where a fold actually happens.
 
 ---
