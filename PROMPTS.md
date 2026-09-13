@@ -43,7 +43,7 @@ it becomes relevant.
 
 **P5. Use Pi's own convention for system-authored text, not an invented one.** Pi has no
 generic marker, but it does have a pattern. `role: "custom"` converts to a plain `user`
-message with **no wrapper at all** (`messages.js:89-96`), so a `customType` is invisible to
+message with **no wrapper at all** (`core/messages.ts:162-169`), so a `customType` is invisible to
 the model. What Pi actually wraps is its two summary roles
 (`messages.js:7-17`):
 
@@ -115,15 +115,20 @@ from a local 27B that C2 excludes.
 
 In every request. The only tool this extension registers.
 
-> Fold a span of older conversation into a summary you write, freeing context. Call with no
-> arguments to list what can be folded.
+> Fold one span of older conversation into a summary you write, freeing context. Call with
+> no arguments to list what can be folded.
 
-**Parameters**
+**Parameters** — all optional; omit them all to get the list.
 
-- `content` — array of `{from, to, summary}`. Omit to get the list.
-  - `from` — first entry of the span, e.g. `"e3"`. From the list `compress()` returns.
-  - `to` — last entry of the span, inclusive. At or after `from`.
-  - `summary` — replaces the span. No length limit.
+- `from` — first entry of the span, e.g. `"e3"`. From the list `compress()` returns.
+- `to` — last entry of the span, inclusive. At or after `from`.
+- `summary` — replaces the span. No length limit.
+
+**One span per call**, not an array of them. An earlier draft took a list, on the reasoning
+that batching saves a menu round trip. Measured: across every live run the model never once
+batched — it always called `compress` per span — while the array produced three defects
+(overlapping spans deleting a summary, an order-dependent check, and a write loop that could
+half-apply). One span makes all three unrepresentable (§17, row 19.59).
 
 **≈ 85 tokens with the schema.** Guidance on *what makes a good summary* is not here; it is
 in the nudge, where it is read immediately before being used.
@@ -143,9 +148,8 @@ below on why it is here rather than in the nudge.
 ```
 Choosing the span. Fold what is finished: exploration that led nowhere, tool output you
 have already used, a phase whose result is recorded. Keep out what the current step is
-still reading, and any instructions you are still working under. Fold every span you mean
-to fold in this one call — a fold reissues the entry ids, so a second call needs a fresh
-menu.
+still reading, and any instructions you are still working under. A fold reissues the entry
+ids, so call compress() again for a fresh list before folding again.
 
 User messages may be folded like anything else. But a requirement, constraint or
 acceptance criterion the user gave you must be quoted verbatim in the summary: it still
@@ -171,7 +175,7 @@ conversation. No fixed sections — thematic headers if the span covers several 
 dense bullets, whatever length the span needs.
 ```
 
-**372 tokens**, measured. Compare the prior art: `billion-context-pi`'s system
+**439 tokens**, measured with Pi's own `estimateTokens`. Compare the prior art: `billion-context-pi`'s system
 prompt is **3,704 tokens in every request**, and its nudge adds 1,366 of which 1,179
 duplicate the system prompt verbatim.
 
@@ -193,19 +197,52 @@ Two things were cut from an earlier draft, each for a reason that generalises (P
 Foldable now — pick a span with from/to, or one entry with from == to.
 
   id     rounds  tokens  first … last
-  e1         34   48.2K  read docs/GEN2-CLONES.md … bash: cargo test --lib
-  e2         34   22.1K  summary b3 "API exploration" … edit crates/cli/src/args.rs
+  e1         34     48K  read: docs/GEN2-CLONES.md … bash: cargo test --lib
+  e2         34     22K  summary b3 "API exploration" … edit: crates/cli/src/args.rs
   …
   e200       12    4.8K  bash: git log --stat
 
-Example: compress({content: [{from: "e1", to: "e37", summary: "…"}]})
+Example: compress({from: "e1", to: "e2", summary: "…"})
 ```
+
+**Row labels are `tool: argument`, and the argument is the tool's *primary* one** — `path`
+for `read`/`edit`/`write`, `command` for `bash`. Not "the first non-empty string", which
+picks `write.content` (the whole file body) over `write.path` 82 times in the recorded
+corpus.
+
+**A tool with neither is labelled by its name alone.** No argument, no JSON dump, no
+fallback to the first string — a label exists to let the model recognise a span, and a
+truncated argument blob does that worse than the bare tool name. A round with no tool call
+at all is labelled by its first line of text.
+
+**The example always names ids that are in the table above it** — the first entry, and the
+second if there is one, otherwise the first again. An earlier version printed a fixed
+`e1 … e37`; in a live run the table held no rows at all and the model folded `e2–e3`, which
+did not exist (§17-equivalent note in DESIGN §17, row 19.54).
+
+**Rows use one label rule:** `tool: argument`. An earlier draft mixed `read docs/…` with
+`bash: cargo test`, which no single rule produces.
 
 Block summaries appear as ordinary rows (`e2` above contains block `b3`), so condensing
 earlier summaries needs no separate section, no second id namespace and no explanation.
 
 **Decided:** keep the `rounds` column. It says how much *conversation* a span is, which the
 token count does not, for ~600 tokens across a full menu.
+
+### 3b-empty. When nothing can be folded
+
+Reachable, and it happened on the first live run: the model put five tool calls in one
+message, so the session held two rounds, H1 excluded both, and the table came back empty.
+
+```
+Nothing is foldable yet — every round so far is still in flight or immediately behind the
+one in flight. Ask again when the conversation is longer.
+```
+
+No table, no example, **and no §3a instruction**: 439 tokens of guidance on choosing a span
+is waste when there is no span to choose (P1), and the paragraph alone reads as a complete
+answer. An example naming ids that do not exist is what caused the model to fold `e2–e3` in
+that run (C8 — the failure was our information, not the model).
 
 ### 3c. Why the guidance is here and not in the nudge
 
@@ -228,14 +265,12 @@ That is a correctness argument, not a stylistic one.
 
 ## 4. `compress(...)` → success
 
-> Folded e1–e37 into **b5**. 412.0K → 3.1K, 38 messages replaced. Original:
+> Folded e1–e37 into **b5**. 412K → 3.1K, 38 messages replaced. Original:
 > `~/.cache/pi/context-fold/01a094/b5.txt`
 
 Carries the block id, the real span, and the path. Their issue #376 is exactly the first two
 missing: *"the compress result lacks new block ids and actual ref spans, so the model's
 block ledger drifts from the session."*
-
-Multiple blocks in one call get one line each.
 
 **≈ 50 tokens.**
 
@@ -251,6 +286,14 @@ Each names the id and the next action (P3).
 | `to` before `from` | `"to" (e3) is before "from" (e40).` |
 | Bad JSON | the parser's own error, verbatim, once. |
 | Empty summary | `summary is required and cannot be empty.` |
+| The span replaces nothing | `Folding e1–e3 would replace nothing: the list is out of date. Call compress() for the current one.` |
+
+There is no "would orphan a block" failure either. It existed while `compress` took an
+array of spans, where one span could take over another block's anchor. With one span per
+call a menu entry never contains an entry a live block covers, so the case is
+unrepresentable and the check and its message are deleted (§17, row 19.61). A block that
+loses its summary for some *other* reason — an overflow cut, by design — is still reported,
+by the log at `turn_end`, which is observation rather than enforcement.
 
 There is no "protected" failure — nothing is exempt from folding (design §4b). There is no
 "already folded" failure either: folded content is not in the view, so it is never in a menu
@@ -305,7 +348,7 @@ Call compress() for the list and the rules for using it.
 </context-manager>
 ```
 
-**48 tokens**, down from ~140 in the previous draft. It keeps only what the menu cannot
+**43 tokens**, measured, down from ~140 in the previous draft. It keeps only what the menu cannot
 supply: the pressure, and the prompt to act. The guidance moved to §3a for the reason in
 §3c — the nudge fires in 6 of 26 sessions, the menu is read before every fold.
 
@@ -326,7 +369,11 @@ prefix would double the framing.
 > `This session overflowed its context window, so the older half was removed from view
 > rather than summarised. Those 1,830 messages (~412K tokens) were written verbatim to
 > ~/.cache/pi/context-fold/overflow/01a094-1789192.txt — read or grep that file to retrieve
-> any of it. Summaries you wrote for folded spans in that half are reproduced below.`
+> any of it — or read the session log at <sessionFile>, which still holds every original.
+> Summaries you wrote for folded spans in that half are reproduced below.`
+>
+> *(the last sentence only when at least one block was fully cut — otherwise the note ends
+> at the file path, because a fixed string would state a falsehood)*
 >
 > *(then, verbatim, each fully-cut block's own summary)*
 
@@ -352,7 +399,7 @@ If the file write failed:
 The footer line is for the human and never reaches the model:
 
 ```
-fold  4 blocks · 312K folded · ours 640K / pi 951K
+folded 312K, 4 blocks
 ```
 
 ---
@@ -362,15 +409,15 @@ fold  4 blocks · 312K folded · ours 640K / pi 951K
 | | Tokens |
 |---|---|
 | **Every request** (system prompt + one tool schema) | **≈ 160** |
-| Per nudge | ~48 |
-| Per menu | ~5,400 (372 of it instruction) |
+| Per nudge | 43 |
+| Per menu | ~5,400 (439 of it instruction) |
 | Per fold | ~50 result + ~30 permanent prefix |
 
 The original, **measured** rather than estimated: **3,704 tokens of system prompt in every
 request**, plus four tool schemas, plus a ref tag on every message in context, plus 1,366
 tokens per nudge of which 1,179 repeat the system prompt verbatim.
 
-Ours: **≈160 tokens per request**, and the 423-token instruction is paid only on the turns
+Ours: **≈160 tokens per request**, and the 439-token instruction is paid only on the turns
 where a fold actually happens.
 
 ---

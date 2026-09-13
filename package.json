@@ -5,9 +5,16 @@
   "type": "module",
   "description": "Model-driven context folding for the Pi coding agent.",
   "main": "dist/index.js",
-  "pi": { "extensions": ["./dist/index.js"] },
-  "engines": { "node": ">=22" },
+  "pi": {
+    "extensions": [
+      "./dist/index.js"
+    ]
+  },
+  "engines": {
+    "node": ">=22"
+  },
   "scripts": {
+    "prepare": "tsup",
     "typecheck": "tsc --noEmit",
     "test": "node --import tsx --test test/*.test.ts",
     "build": "tsup"

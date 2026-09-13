@@ -99,7 +99,7 @@ Everything in §17 is what those reviews changed.
 | 25 | The menu partitions by round count and treats block summaries as ordinary entries (§5). |
 | 27 | **Nothing is protected.** No mechanism exempts any message from folding; the instruction returned with the menu carries the judgement instead (§4b, §9). |
 | 28 | The `context` handler **never throws**. A record it cannot use is skipped and logged; every other fold still applies (§3). |
-| 29 | **Deviation from 28, recorded per the Constitution:** until `log.ts` lands in step 5 there is no log, so `readBlocks` neither validates nor logs — it casts. The only writer is our own code in one version and C1 forbids back-compatibility, so a validator has no evidence (C10). A malformed record would crash the handler and send the unfolded history; the protection is social until step 5. |
+| 29 | **Permanent, not provisional (§17, row 19.58):** `liveBlocks` casts a record rather than validating it. The only writer is our own code in one version and C1 forbids back-compatibility, so a validator has no evidence (C10). A malformed record would crash the handler and send the unfolded history; the protection is social until step 5. |
 | 26 | System-authored text follows Pi's own markup convention: `<summary …>` for folds, `<context-manager>` for the nudge, nothing for the overflow note (Pi wraps it). No `[context]` prefix anywhere — bracket markup on message content is what the model imitated in the original. |
 
 **Open.** Nothing.
@@ -109,19 +109,10 @@ principle to be recorded here. In practice the table above carries the *current*
 and **§17 carries every change with the evidence that forced it** — including changes to
 this document made during the build. §17 is the audit trail; this table is the state.
 
-**Progress** (§16 build order). Steps 1 and 2 are done and have been through four
-worker/auditor rounds; nothing folds yet, because no tool is registered until step 3.
+**Progress** (§16 build order). All five steps are landed. 859 source lines, 1,679 test
+lines, 44 tests. What has and has not been verified is §19.
 
-| Step | Scope | State |
-|---|---|---|
-| 1 | `view` + `project` + `state` — the view from entries, folding nothing | done |
-| 2 | `status`, reading `ctx.getContextUsage()` | done |
-| 3 | `menu` + `compress` + `dump` + the nudge — the first real folds | next |
-| 4 | `emergency` | — |
-| 5 | `config` + `log` | — |
-
-193 source lines and 468 test lines so far. The audit trail is §17; every row there is a
-change some review forced, with the evidence.
+The audit trail is §17; every row there is a change some review forced, with the evidence.
 
 ---
 
@@ -303,12 +294,12 @@ prompt (§17, row 19.33).
 Foldable now — pick a span with from/to, or one entry with from == to.
 
   id     rounds  tokens  first … last
-  e1         34   48.2K  read docs/GEN2-CLONES.md … bash: cargo test --lib
-  e2         34   22.1K  [b3] API exploration … edit crates/cli/src/args.rs
+  e1         34     48K  read: docs/GEN2-CLONES.md … bash: cargo test --lib
+  e2         34     22K  summary b3 "API exploration" … edit: crates/cli/src/args.rs
   …
   e200       12    4.8K  bash: git log --stat
 
-Example: compress({content: [{from: "e1", to: "e37", summary: "…"}]})
+Example: compress({from: "e1", to: "e2", summary: "…"})
 ```
 
 ### How the partition works
@@ -320,7 +311,9 @@ This works because **coarseness only costs precision at the two edges of a fold.
 names a `from` and a `to`; everything between is included however the middle is divided.
 
 **Divide evenly by round count.** `chunk = ceil(foldableRounds / 200)`, then emit every
-`chunk` rounds. One line.
+`chunk` rounds. One line. Note what the ceiling does: the count lands between 100 and 200,
+not at 200 — 224 foldable rounds give 112 entries, 401 give 134. "At most 200" is the
+guarantee; it is not a target.
 
 The first draft divided by token weight so that an oversized round would land in its own
 entry. At 200 entries that distinction does not pay for itself: a large round ends up in a
@@ -338,11 +331,13 @@ span with ~33 others, all of them old, and folding the span is what the model wa
 **No arguments → the menu.** With arguments → fold.
 
 ```
-compress({ content: [ { from: "e3", to: "e40", summary: "…" } ] })
+compress({ from: "e3", to: "e40", summary: "…" })
 ```
 
-`from`/`to` are inclusive and must both be in the menu we last issued. Adjacent entries in
-one call produce one block.
+`from`/`to` are inclusive and must both be in the menu we last issued. **One span per
+call.** The array an earlier draft took is gone: the model never batched in any live run,
+and the array produced overlapping-span content loss, an order-dependent check and a
+half-appliable write loop — all three unrepresentable with a single span (§17, row 19.59).
 
 Arguments are parsed with plain `JSON.parse`. No lenient parsing, no brace repair, no
 stringified-array handling — that machinery exists in the original for a Qwen model in
@@ -419,7 +414,7 @@ After a **successful** fold:
   69% of this user's assistant messages carry signed thinking; signatures are per-block and
   never chained, so removing them is safe.
 - **Also remove the menu call and its ~5K result**, same rules.
-- The summary message is wrapped in `<summary block="b5" msgs="38" tokens="412.0K→3.1K"
+- The summary message is wrapped in `<summary block="b5" msgs="38" tokens="412K→3.1K"
   original="…/b5.txt">`. That follows Pi's own convention for system-authored context —
   it wraps its compaction and branch summaries the same way (`messages.js:7-17`) — so the
   model needs no sentence explaining that the text is a record rather than an instruction.
@@ -445,21 +440,27 @@ If the log ever shows failed calls accumulating, we add the collapse then (C10).
 `ctx.ui.setStatus(key, text)` gives us a slot in Pi's own footer (`types.d.ts:80`):
 
 ```
-fold  4 blocks · 312K folded · 640K / 1.0M
+folded 312K, 4 blocks
 ```
 
-There is **one** context number and it is Pi's (§7). Two earlier drafts showed ours beside
-it: the first claimed they diverge permanently and that the divergence was the diagnostic,
-the second kept it as a cross-check. Both are gone with the meter — they were comparing Pi's
-number against a copy of itself, and the one time the copy differed it was the copy that was
-wrong.
+**The line carries only what Pi cannot know** — how many blocks exist and how much has been
+folded. It shows no context number at all.
 
-What this line adds over Pi's own footer is the part Pi cannot know: how many blocks exist
-and how much has been folded. `?` in place of the number is truthful — Pi returns `null`
-right after a compaction and `undefined` with no model.
+Three drafts got here. The first printed ours beside Pi's and called the divergence a
+diagnostic; the second kept it as a cross-check; the third printed Pi's alone. All three
+were duplicating something the footer already shows, and a compatibility study settled it
+(§17, row 19.63): `pi-powerline-footer` calls `ctx.ui.setFooter`, which **replaces** Pi's
+own footer, and re-exposes extension statuses through a segment whose overflow row silently
+**drops** whatever does not fit (`index.ts:1120-1126`). Measured at 80 columns our line
+never rendered at all; at 220 it did. Dropping the context pair takes the line from ~42
+visible columns to ~21, which fits — and powerline also exposes a `customItems` API that
+promotes any status key to a dedicated segment in the primary row, where the overflow logic
+cannot reach it (§17, row 19.64).
 
-Pi's footer collapses runs of spaces (`footer.js`, `.replace(/ +/g, " ")`), so the double
-space above renders as one.
+The `?` case goes with the number it guarded.
+
+Note on spacing: Pi collapses runs of spaces (`footer.js`), powerline does not. Single
+spaces, so the line is the same under both.
 
 ---
 
@@ -514,7 +515,13 @@ model, which C2 excludes and no log shows.
 
 Baseline handling — three rules, and the third is the one that was wrong:
 
-- session start → `baseline = predicted`
+- **session start → `baseline = 0`**, not the current number. An earlier version anchored on
+  the current context, which is correct for a new session and wrong for a resumed one:
+  resuming an 800K session set the baseline to 800K, so the nudge needed 1.0M on a 1M window
+  and could never fire — issue #269 through the resume door, in a project whose whole goal is
+  a session that runs for weeks. Starting at 0 nudges a large resumed session on its first
+  turn, which is the right answer, and costs nothing on a fresh one. This deletes the
+  `session_start` special case rather than adding a fourth rule for resume (§17, row 19.56).
 - on a nudge → `baseline = predicted`
 - **on a fold → `baseline = predicted` only if `predicted` actually fell.**
 
@@ -562,23 +569,37 @@ interface CompactionResult { summary: string; firstKeptEntryId: string;
 
 **No model call. The recovery is mechanical:**
 
-1. Find the entry at the **50% mark by tokens** of the current view, then keep walking back
-   until the cut does not orphan a live block — every compaction in this design is ours
-   (`threshold` is cancelled, `overflow` and `manual` we supply), so the cut point is
-   entirely under our control and a block losing its anchor is unrepresentable rather than
-   guarded (§17, row 19.47). Validate the id is on `branchEntries` — Pi does not, and a bad
+1. Cut at the **earliest round boundary that frees at least half** the view's tokens, and
+   when no boundary frees half, **at the last boundary** — keeping only the newest round,
+   the most relief available. Never inside a round: that keeps tool results whose calls were
+   removed, the direction pi-ai does not repair. The fallback matters: an earlier version
+   threw when no boundary freed half, the handler caught it and cancelled, and Pi turns a
+   cancelled *automatic* compaction into a turn that vanishes with nothing printed
+   (`agent-session.ts:2284-2300`, `:1141`). That case is reachable — one live round held 8
+   of 9 messages (§17, row 19.60). Validate the id is on `branchEntries` — Pi does not, and a bad
    `firstKeptEntryId` makes `buildContextEntries` silently discard the entire pre-compaction
    history and report success (reproduced).
+
+   An earlier version of this step said "keep walking back until the cut orphans no live
+   block", so that an orphaned block became unrepresentable. **Measured, that rule frees
+   zero tokens** — on all ten recorded sessions with enough rounds, against 35K–184K for the
+   plain cut (§17, row 19.57). A folded block's covered entries still exist but weigh
+   nothing in the view, so "keep one covered entry" pins the cut at or before the block's
+   **first** covered entry, and everything earlier is covered too *when the model folds at
+   the oldest end* — which is the shape this project encourages. A middle fold behaves
+   differently; the measurement is "under 2% freed on 10 of 10 sessions, exactly zero on 7". The recovery then frees
+   nothing, Pi retries, `_overflowRecoveryAttempted` is already set, and the session dies —
+   hardest exactly when the model has been folding, which is the case this project exists
+   for.
 2. Write everything before it to
    `~/.cache/pi/context-fold/overflow/<sessionId>-<timestamp>.txt` — plain text, one section per
    message.
 3. Return `{ summary: note, firstKeptEntryId, tokensBefore }` where the note is:
    `[context] Overflow. The older half of this session (~412K, 1,830 messages) was written to <path>. Use read to retrieve any of it.`
 
-   "Folded blocks are unaffected" is true **because step 1 makes it true** — the cut never
-   orphans one. An earlier draft asserted it while the cut ignored blocks, then tried to
-   repair it by reproducing the cut blocks' summaries in this note. Moving the constraint
-   into the cut deleted both the false promise and the repair (§17, row 19.47).
+   The cut **does** orphan blocks in the older half, deliberately. Each fully-cut block's
+   own summary is reproduced verbatim in the note, which is what PROMPTS §8 specified all
+   along and what makes the recovery coherent without a model call.
 
 Pi writes the compaction entry and, with `willRetry`, re-runs the turn.
 
@@ -652,9 +673,10 @@ smaller than the content it replaces, log it. The fold still happens.
 | `emergency.ts` | `session_before_compact`, mechanical dump | 60 |
 | `state.ts` | block records via `appendEntry`, read from `getBranch()` | 80 |
 | `status.ts` | `setStatus` line | 20 |
+| `types.ts` | shared types (absent from the first estimate) | 32 |
 | `config.ts` | three keys, read once | 12 |
 | `log.ts` | one JSON line writer | 25 |
-| **Total** | | **~830** |
+| **Total** | **actual 905**. The first estimate said ~830 and §17 settled ~950. `emergency.ts` at 125 against 60 is the real overrun. | |
 
 Against ~9,950 lines of source in the original.
 
@@ -759,7 +781,21 @@ Export command. The pi-subagents settings writer.
    (`session-manager.js:711`). Accepted: if the session file is damaged the conversation is
    gone anyway, and co-locating state with data is what stops the two diverging (#299, #322).
 4. **The 200K nudge step may be too large for this workload** — measured in §18, chosen anyway.
-5. **Rebuilding the view overrides earlier `context` handlers.** On this install that is
+5. **Rebuilding the view overrides earlier `context` handlers — proven, and accepted.**
+   No longer an open question. `pi-goal-x` removes `role:"custom"` messages whose
+   `customType` is its audit marker (`goal-session-safety.ts:11`), and those are *persisted*
+   by `sendMessage` — so `buildContextEntries()` returns them and **we put back every
+   message it deleted, on every request, for the life of the session.**
+
+   Accepted, for two measured reasons. The cost is small: real sessions hold single-digit
+   audit entries. And the harm goal-x guards against does not materialise here — its own
+   `flush` only sends when `ctx.isIdle()`, so its messages land at turn boundaries, and our
+   projection preserves order, so they can never sit between a tool call and its result.
+
+   No fix, per C10: coupling our projection to another extension's `customType` would be a
+   mechanism for a problem nobody has had. Revisit if a log shows the token cost mattering.
+
+   *(Original wording, now superseded:)* On this install that is
    `pi-goal-x`. §3 applies its structural rule independently, but this needs a live check.
 6. **`prepareCompaction` may skip our hook, and a `/model` switch suppresses overflow
    detection.** Both unobserved, both logged (§8).
@@ -790,6 +826,67 @@ went untested — the audit found their mutations survived.
    boundary is an untested menu.
 4. `emergency.ts`.
 5. `config.ts`, `log.ts`.
+
+---
+
+## 19. What has actually been verified
+
+Written so this can be judged without reading seven audit reports. **Verified** means a test
+or a measurement holds it; **observed** means it happened in a live Pi session; **argued**
+means only reasoning supports it.
+
+### Verified
+
+| | Evidence |
+|---|---|
+| The view is rebuilt losslessly from session entries | byte-equality on **25 of 25** recorded sessions, ~16,000 entries |
+| No tool result is ever emitted without its call | 2,813 blocks across the corpus, 0 orphans, 0 straddles |
+| Historical message text is never modified | byte snapshot before and after every projection, fold path included |
+| Coverage is round-aligned | the transitive closure, pinned by a mutation that restores the one-hop version |
+| A fold that would replace nothing is refused | the stale-menu case, reproduced and tested |
+| Blocks absorb correctly | chains of three, already-absorbed ids, entries already gone |
+| Replay is deterministic | same log twice, identical state |
+| Model-facing strings match this project's contract | §1, §2, §4, §5, §6, §7, §8 read from `PROMPTS.md`, not copied |
+
+44 tests. Across seven audit rounds, roughly **250 mutations** were run against the tree; the
+survivors are listed in §17 and each is either equivalent or now covered.
+
+### Observed live
+
+A real fold, with the model afterwards reading its own folded file back **unprompted**. Four
+folds in one session, each absorbing the last. A real overflow recovery: **40,644 tokens down
+to 77**, every original still in the session file. A stale id rejected, then corrected by the
+model on its own in the next call. One run against the real handler chain with `pi-goal-x`
+loaded: 19 context events, 0 provider errors.
+
+### Verified by the readiness review
+
+| | Evidence |
+|---|---|
+| It builds and installs | `npm run build` (23.6 KB bundle), `pi install <path>` records the path; `private: true` and the missing `files` field are harmless because a local install copies nothing and Pi rewrites the peer imports to its own copies |
+| The built bundle behaves identically to the source | both loaded in one process, driven through all 25 sessions — **0 differences** in prompt, projection, menu, status, nudge and compaction |
+| It works in the owner's real extension set | `pi-lens`, `pi-goal-x`, `pi-powerline-footer`, `pi-mcp-adapter` all loaded; four folds, 33,970 → 20,113 tokens, no other extension misbehaved |
+| Removing it is safe | a session with four folds and a compaction, re-run with the extension gone: 122 entries → 118 messages, all 34 tool results present, the model answered correctly. Folding is a view transformation only |
+| Plausible user mishaps are recoverable | Ctrl-C mid-fold (self-heals), `--continue`, manual `/compact`, mid-session model switch, no config, unwritable cache (fails loudly, records nothing), two sessions on one project |
+
+### Argued, not verified
+
+- **Summary quality.** Nothing here measures whether the model writes summaries good enough to
+  work from weeks later. That needs a long real session, and it is the thing most likely to
+  disappoint.
+- **The nudge cadence.** 200,000 tokens was chosen from a three-day sample where it would have
+  fired six times. No session has yet run long enough to exercise it naturally.
+- **Prompt-cache economics.** Folding costs cache by construction; the measured median retained
+  prefix is 33%. Whether the trade pays over a month is unmeasured.
+- **Two gaps §8 declines to handle:** `prepareCompaction` returning `undefined`, and a `/model`
+  switch suppressing overflow detection. Both are unobserved, both are logged if they occur.
+
+### What would make it trustworthy
+
+Run it on a session you can afford to lose, with `debug: true`, and read
+`~/.pi/context-fold.log`. The three things worth watching: whether folds actually reclaim what
+they claim, whether the model ever folds something it then needs back, and whether the nudge
+fires at a sensible moment.
 
 ---
 
@@ -853,12 +950,25 @@ went untested — the audit found their mutations survived.
 | 19.44 | "folded blocks are unaffected" by overflow | *(superseded by 19.47)* | |
 | 19.45 | Our own meter, 184 lines | `ctx.getContextUsage()` | identical on 23/23 sessions, and 10× wrong where it differed — C5 |
 | 19.46 | Coverage shrunk to keep a result whose call survived | coverage extended under the call↔result closure | the shrink caused an orphan result, a moved summary, and a silent no-summary path |
-| 19.47 | Detect a block orphaned by the cut | make the cut never orphan one | every compaction here is ours, so the cut point is ours to choose |
+| 19.47 | Detect a block orphaned by the cut | make the cut never orphan one | *(reverted by 19.57 — measured to free zero tokens)* |
 | 19.48 | "the closure means the summary always lands at the first covered entry" | earliest covered position with no tool call pending | reproduced: a two-call assistant message puts the summary mid-round, and pi-ai then fabricates a tool failure |
 | 19.49 | "a compaction cut only removes a prefix, so coverage is contiguous in the view" | `buildContextEntries` **hoists** the newest compaction entry to the front, so coverage can split | 13 compaction entries across 5 of 23 sessions; 2 sessions already have two or more |
 | 19.50 | "menu tokens are excluded from the growth measurement" | they are not; the menu result just leaves the view next round | the arithmetic was wrong (20K, not 200K) and Pi's single number has nothing to subtract from |
 | 19.51 | A "hold the summary until no call is pending" condition | complete the closure's transitivity instead | the mid-round case becomes unrepresentable rather than handled — C4 |
 | 19.52 | "excluding compaction entries makes coverage contiguous" | it does not; coverage can split regardless | a span with no compaction entry, contiguous when folded, splits when a newer compaction hoists past an older one |
+| 19.66 | Validate `firstKeptEntryId` against `branchEntries` | deleted | the cut point comes from `buildContextEntries()`, a subset of the branch, so a bad id is unrepresentable — and the check's only action was a throw, which 19.65 forbids |
+| 19.65 | "throws only when no cut exists" | never throws; a one-round view returns a no-op compaction and Pi reports the failure | a throw hands the turn to Pi's raw summariser — the D5 disaster — so printed-and-fatal beats nothing only in appearance |
+| 19.64 | `fold N blocks · NK folded` | `folded 312K, 4 blocks` | the reclaimed total is the number worth reading first; `fold` as a bare prefix said nothing the numbers did not |
+| 19.63 | The status line shows a context number | it shows blocks and folded tokens only | it duplicated Pi's own footer, and at 80 columns `pi-powerline-footer`'s overflow row silently dropped the whole line — measured |
+| 19.61 | A fold-orphan check, and PROMPTS §5's row for it | deleted | with one span per call the case is unrepresentable; the `turn_end` log still *reports* a block without a summary, which is observation, not enforcement — C4, C10 |
+| 19.62 | "the emergency handler must never throw" | it never *cancels*; it throws only when no cut exists, and keeps two deliberate catches | a cancel is a silent dead turn, and deleting the log catch routes a log failure into the raw summariser |
+| 19.59 | `compress` takes an array of spans | one span per call | the model never batched in any live run, and the array produced three defects; one span makes them unrepresentable — C10, C4 |
+| 19.60 | `halfway` throws when no boundary frees half, and the handler cancels | fall back to the last boundary; delete the catch | a cancelled automatic compaction is a silently dead turn, and the design says "never cancel" |
+| 19.57 | "the cut never orphans a live block" | cut at the earliest round boundary freeing half; orphaned blocks' summaries go in the note | measured: the never-orphan rule freed **0 tokens on 10 of 10** sessions, against 35K–184K — it fails hardest when the model has been folding |
+| 19.58 | Decision 29's cast is "social until step 5" | it is permanent | C10 (one writer, one version, C1 forbids back-compat) and D2 (`liveBlocks` runs in the `context` handler, where "skipped and logged" cannot do I/O) |
+| 19.56 | `session_start` anchors the baseline on the current context | it starts at 0 | resuming an 800K session made the nudge unreachable; starting at 0 deletes the special case instead of adding a resume rule — C4 |
+| 19.54 | The menu's example used fixed ids `e1 … e37` | it names ids from the table it sits under, and an empty menu prints no example | live: the table was empty and the model folded `e2–e3`, which did not exist |
+| 19.55 | The nudge is appended by the `context` handler each turn | it is a persisted Pi message sent at `turn_end` | appending in the handler is a decision inside a handler D2 requires to be pure; persisting costs ~48 tokens per nudge (~6 per three days) and survives restarts |
 | 19.53 | A fixpoint closure over the call↔result relation | two bounded hops | measured max eccentricity 2 over 6,666 components; and a fixpoint would cascade coverage across unrelated rounds if a call id were ever repeated, where a bounded pass cannot — the general version is the *less* safe one |
 
 Module estimate: **~950 lines**, down from ~990, ~1,385, ~1,810 in the first draft, and
@@ -881,5 +991,5 @@ No single turn ever grows more than 90,764 tokens, so the step is cumulative. At
 rule fires roughly twice a day and no session is ever nudged twice. **Settled at 200,000**
 — chosen knowing the measurement, on a 1M window where pressure is rare.
 
-**2. `MENU_MAX`.** Settled: **200**, divided evenly by token weight (§5). ≈ 5K tokens per
+**2. `MENU_MAX`.** Settled: **200**, divided evenly by round count (§5). ≈ 5K tokens per
 menu. A constant in the source, not a config key.

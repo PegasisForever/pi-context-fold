@@ -9,6 +9,13 @@ export interface ViewItem {
 	message: Msg;
 }
 
+/** One message of the projected view, naming what a fold of it records: an entry, or an earlier block. */
+export interface Slot {
+	message: Msg;
+	entryId?: string;
+	block?: FoldBlock;
+}
+
 /** A folded span, persisted as a `fold-block` custom session entry. */
 export interface FoldBlock {
 	id: string;
