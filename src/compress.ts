@@ -11,10 +11,10 @@ import { buildView } from "./view.ts";
 
 const parameters = Type.Object({
 	from: Type.Optional(
-		Type.String({ description: 'first entry of the span, e.g. "e3". From the list compress() returns.' }),
+		Type.String({ description: 'first entry of the span, e.g. "e3". From the list compact() returns.' }),
 	),
 	to: Type.Optional(Type.String({ description: "last entry of the span, inclusive. At or after from." })),
-	summary: Type.Optional(Type.String({ description: "replaces the span. No length limit." })),
+	summary: Type.Optional(Type.String({ description: "this text will replace the span in your context." })),
 });
 
 type Span = Static<typeof parameters>;
@@ -41,9 +41,9 @@ export interface FoldState {
 export function registerCompress(pi: ExtensionAPI, state: FoldState): void {
 	pi.registerTool<typeof parameters, Shown>({
 		name: TOOL_NAME,
-		label: "Compress",
+		label: "Compact",
 		description:
-			"Fold one span of older conversation into a summary you write, freeing context. Call with no arguments to list what can be folded.",
+			"Compact one span of the conversation into a summary you write, saving the full transcription to a file, freeing context. Always call `compact()` with no arguments to list what can be compacted, before you compact a span.",
 		parameters,
 		execute: async (toolCallId, params, _signal, _onUpdate, ctx) => {
 			const view = buildView(ctx.sessionManager.buildContextEntries());
@@ -67,7 +67,7 @@ export function registerCompress(pi: ExtensionAPI, state: FoldState): void {
 			// the span produces the same empty plan, so one condition answers both (§5).
 			if (taken.length === 0) {
 				throw new Error(
-					`Folding ${fold.from}–${fold.to} would replace nothing: the list is out of date. Call compress() for the current one.`,
+					`Compacting ${fold.from}–${fold.to} would replace nothing: the list is out of date. Call compact() for the current one.`,
 				);
 			}
 
@@ -101,10 +101,10 @@ function resolve(menu: Menu | undefined, span: Span): Fold {
 	const entries = menu?.entries ?? [];
 	const from = entries.find((entry) => entry.id === span.from);
 	if (from === undefined)
-		throw new Error(`"${span.from}" is not in the current list. Call compress() for the current one.`);
+		throw new Error(`"${span.from}" is not in the current list. Call compact() for the current one.`);
 	const to = entries.find((entry) => entry.id === span.to);
 	if (to === undefined)
-		throw new Error(`"${span.to}" is not in the current list. Call compress() for the current one.`);
+		throw new Error(`"${span.to}" is not in the current list. Call compact() for the current one.`);
 	const at = entries.indexOf(from);
 	const end = entries.indexOf(to);
 	if (end < at) throw new Error(`"to" (${to.id}) is before "from" (${from.id}).`);
@@ -156,7 +156,7 @@ function plan(
 /** PROMPTS.md §4: the block id, the real span, and the path. */
 export function resultLine(record: FoldBlock, from: string, to: string): string {
 	return (
-		`Folded ${from}–${to} into ${record.id}. ` +
+		`Compacted ${from}–${to} into ${record.id}. ` +
 		`${shortTokens(record.tokensBefore)} → ${shortTokens(record.tokensAfter)}, ${record.msgs} messages replaced. ` +
 		`Original: ${record.originalPath}`
 	);
@@ -164,15 +164,15 @@ export function resultLine(record: FoldBlock, from: string, to: string): string 
 
 /** The same fold, for a person: no path, because /jobs-style detail is not what you are watching for. */
 const foldForYou = (record: FoldBlock, from: string, to: string): string[] => [
-	`Folded ${from}–${to} into ${record.id}.`,
+	`Compacted ${from}–${to} into ${record.id}.`,
 	`${shortTokens(record.tokensBefore)} → ${shortTokens(record.tokensAfter)}, ${record.msgs} messages replaced.`,
 ];
 
 /** The menu, for a person: its size, never its 5.4K of rows. */
 const menuForYou = (menu: Menu): string[] =>
 	menu.entries.length === 0
-		? ["Nothing is foldable yet."]
-		: [`${menu.entries.length} entries listed, ~${shortTokens(menu.tokens)} foldable.`];
+		? ["Nothing is compactable yet."]
+		: [`${menu.entries.length} entries listed, ~${shortTokens(menu.tokens)} compactable.`];
 
 function nextBlockNumber(branch: SessionEntry[]): number {
 	let highest = 0;

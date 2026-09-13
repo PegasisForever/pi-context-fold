@@ -1,6 +1,6 @@
 import type { FoldBlock, Msg, Slot, ViewItem } from "./types.ts";
 
-export const TOOL_NAME = "compress";
+export const TOOL_NAME = "compact";
 
 /** Covered entries out, each block's summary at its first covered entry, retired compress pairs out
  * (§6). Pure: no I/O, no decisions (D2). The retired calls are derived here, not passed in: every
@@ -70,10 +70,11 @@ function keep(message: Msg, covered: boolean, goneCalls: Set<string>): Msg | und
 	return content.length === 0 ? undefined : { ...message, content };
 }
 
-/** PROMPTS.md §6. Pi wraps its own compaction summaries this way, so the tag needs no explaining. */
+/** PROMPTS.md §6. Pi wraps its own compaction summaries this way, so the tag needs no explaining.
+ * One attribute: the path is the only one the model can act on. The block id, the message count and
+ * the two token numbers were ours to read, and the TUI reads them from the record instead. */
 export function summaryMessage(block: FoldBlock): Msg {
-	const tokens = `${shortTokens(block.tokensBefore)}→${shortTokens(block.tokensAfter)}`;
-	const open = `<summary block="${block.id}" msgs="${block.msgs}" tokens="${tokens}" original="${block.originalPath}">`;
+	const open = `<summary full-transcript="${block.originalPath}">`;
 	return {
 		role: "user",
 		content: [{ type: "text", text: `${open}\n${block.summary}\n</summary>` }],

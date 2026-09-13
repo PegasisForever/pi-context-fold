@@ -12,14 +12,15 @@ Every string this extension puts in front of the model. Companion to
 | Layer | When | Cost | Carries |
 |---|---|---|---|
 | System prompt | every request, cached | ≤ 80 tok | that context is self-managed, the one tool, the folded-content folder |
-| Nudge | ~twice a day, fresh, late in context | ≤ 150 tok | the pressure, and what deciding whether to fold needs (§7) |
+| Nudge | ~twice a day, fresh, late in context | ≤ 160 tok | the pressure, and what deciding whether to compact needs (§7) |
 | Menu | only when asked, **mandatory before any fold** | ~5.4K tok | the entries, and what picking a span and writing a summary need (§3a) |
 
-The folding guidance is split by the decision it serves. **Whether to fold at all** is decided
-before the menu is called, so what that decision needs is in the nudge: what qualifies as
-foldable, that nothing is destroyed, and what a fold costs. **Which span, and what the summary
-must say** is decided with the table in front of the model, so it stays in the menu, paid only
-when a fold is actually happening. §3c has the reasoning, and what the split costs.
+The folding guidance is split by the decision it serves. **Whether to compact at all** is
+decided before the menu is called, so what that decision needs is in the nudge: what qualifies,
+and that the model may decline. **Which span, and what the summary must say** is decided with the
+table in front of the model, so it stays in the menu, paid only when a fold is actually
+happening. That nothing is destroyed is in the system prompt, because it is still true after the
+menu is gone (P7). §3c has the reasoning, and what the split costs.
 
 **P2. C2 — write for a model that reads carefully.** No shouting, no repetition, no
 restating a rule three ways. The original's system prompt is 86 lines and repeats its
@@ -64,7 +65,7 @@ content inside a tag.** We follow it, with three consequences:
 | Fold summary | `<summary block=… original=…>` | the model already learned what `<summary>` means from Pi's compaction |
 | Nudge | `<pi-context-fold>` | an instruction, not a record — must not look like a summary |
 | Overflow note | **none** | it becomes Pi's `compactionSummary`, so Pi wraps it for us |
-| Tool results | none | the tool protocol already attributes them |
+| Tool results | none for attribution; `<compact>` inside the menu | the tool protocol says who wrote it, so a marker would repeat it — but the menu holds four unlike parts, and naming each one is what keeps them apart |
 
 No `[context]` prefix anywhere. Square-bracket markup on message content is what the model
 imitated in the original; a named XML element that appears once per turn gives it nothing to
@@ -76,19 +77,18 @@ copy.
 
 Injected on `before_agent_start`. In every request.
 
-> ### Context
+> ### Context Management
 >
-> This session manages its own context. When it grows large you will be told how much of it
-> is old enough to fold; folding replaces older parts of the conversation with summaries you
-> write, and it is yours to decide. `compress()` with no arguments lists what can be folded.
->
-> Everything you have folded in this session is written to
-> `~/.pi/agent/context-fold/<session>/` as plain text, one file per block. Search that folder before
-> you ask the user to repeat something — the answer is usually already there.
+> You manage your own context. When it grows large you will be notified to compact some of your context. Compacting replaces older parts of the conversation with summaries you write. Compacting keeps the context lean which helps you to perform better. The compacted range and the summary are yours to decide. `compact()` with no arguments lists what can be compacted. The transcript you have compacted is written to `~/.pi/agent/context-fold/<session>/` as plain text, one file per compaction. Search that folder when you encounter an ambiguity or have a question, the answer is usually already there.
 
-**133 tokens**, with a real session id in the path. The original is ≈ 1,400. *"It is yours to
-decide"* is there because the nudge is a report and not an order (§7): the model reads the
-nudge once and this block in every request, so this is where the standing expectation is set.
+**158 tokens**, with a real session id in the path. The original is ≈ 1,400. *"The compacted
+range and the summary are yours to decide"* is here rather than in the nudge because the nudge is
+a report and not an order (§7): the model reads a nudge at most twice a day and this block in
+every request, so this is where the standing expectation is set.
+
+The transcript folder is here for the same reason (P7). The nudge used to say *"nothing is
+destroyed — what you fold is written to a file"*; in every request that fact is worth more, and
+the nudge got shorter for it.
 
 What is absent, and why:
 
@@ -114,18 +114,17 @@ from a local 27B that C2 excludes.
 
 ---
 
-## 2. `compress` — tool description
+## 2. `compact` — tool description
 
 In every request. The only tool this extension registers.
 
-> Fold one span of older conversation into a summary you write, freeing context. Call with
-> no arguments to list what can be folded.
+> Compact one span of the conversation into a summary you write, saving the full transcription to a file, freeing context. Always call `compact()` with no arguments to list what can be compacted, before you compact a span.
 
 **Parameters** — all optional; omit them all to get the list.
 
-- `from` — first entry of the span, e.g. `"e3"`. From the list `compress()` returns.
+- `from` — first entry of the span, e.g. `"e3"`. From the list `compact()` returns.
 - `to` — last entry of the span, inclusive. At or after `from`.
-- `summary` — replaces the span. No length limit.
+- `summary` — this text will replace the span in your context.
 
 **One span per call**, not an array of them. An earlier draft took a list, on the reasoning
 that batching saves a menu round trip. Measured: across every live run the model never once
@@ -141,7 +140,7 @@ harder to get wrong and validate separately, for ~15 tokens per request.
 
 ---
 
-## 3. `compress()` with no arguments → the menu
+## 3. `compact()` with no arguments → the menu
 
 Only when asked. ~5.4K tokens. **This is where the span and summary guidance lives.** What
 qualifies for a fold at all is in the nudge instead (§7); see §3c.
@@ -149,37 +148,29 @@ qualifies for a fold at all is in the nudge instead (§7); see §3c.
 ### 3a. The instruction, above the entry table
 
 ```
-Choosing the span. Keep out what the current step is still reading, and any instructions
-you are still working under. A fold reissues the entry ids, so call compress() again for a
-fresh list before folding again.
+<compact>
+<how-to-choose-the-span>
+Avoid compacting recent turns.
+Compact finished work: exploration that led nowhere, tool output you have already used, a phase whose result is recorded.
+A span can be one entry: from == to.
+</how-to-choose-the-span>
 
-User messages may be folded like anything else. But a requirement, constraint or
-acceptance criterion the user gave you must be quoted verbatim in the summary: it still
-binds afterwards, and the summary becomes the only place it stays in view.
-
-Writing the summary. You are its reader, later in this session, and the original stays on
-disk. So write an index into recoverable text rather than a replacement for it: carry the
-conclusions you would otherwise have to derive again, and say enough about the rest to know
-when the file is worth opening.
-
-Keep verbatim, because these are the search keys into that file and a paraphrase cannot be
-grepped: full paths with line numbers, identifiers and signatures, error strings, versions,
-numbers, thresholds. Keep what each piece of work was trying to settle, each decision with
-the reason for it, each dead end with what killed it, and every question left open.
-
-Drop the bulk you will not read again: logs, file contents, repeated status checks, the
-discussion that reached a conclusion — keep the conclusion. For anything large you drop,
-leave one line saying what was in it.
-
-Record what happened, not what to do next; the work still to do is in the live
-conversation. No fixed sections — thematic headers if the span covers several concerns,
-dense bullets, whatever length the span needs.
+<how-to-summarize>
+You and only you will be the reader of the summary.
+Carry the conclusions you would otherwise have to derive again, and say enough about the rest to know when the full transcript file is worth opening.
+The intent, corrections, etc from the user must be fully preserved in the summary.
+Keep a summary of what you did in response to the user messages.
+Keep verbatim for these because they are the search keys into the transcript file: full paths, identifiers and signatures, error strings, versions, numbers, thresholds, etc.
+Keep what each piece of work was trying to settle, each decision with the reason for it, each dead end with what killed it, and every question left open.
+Drop the bulk you will not need again: logs, file contents, repeated status checks, the discussion that reached a conclusion — keep the conclusion. For anything large you drop, leave one line saying what was in it.
+Record what happened, not what to do next.
+No fixed sections: thematic headers if the span covers several concerns, dense bullets, whatever length the span needs.
+</how-to-summarize>
 ```
 
-**388 tokens**, measured with Pi's own `estimateTokens` — 433 before the two sentences that
-qualify a fold moved to the nudge. Compare the prior art: `billion-context-pi`'s system
-prompt is **3,704 tokens in every request**, and its nudge adds 1,366 of which 1,179
-duplicate the system prompt verbatim.
+**337 tokens**, measured with Pi's own `estimateTokens`, down from 433. Compare the prior
+art: `billion-context-pi`'s system prompt is **3,704 tokens in every request**, and its
+nudge adds 1,366 of which 1,179 duplicate the system prompt verbatim.
 
 Two things were cut from an earlier draft, each for a reason that generalises (P6, P7):
 
@@ -196,15 +187,19 @@ Two things were cut from an earlier draft, each for a reason that generalises (P
 ### 3b. Then the entry table
 
 ```
-Foldable now — pick a span with from/to, or one entry with from == to.
+<compactable-spans>
 
-  id     rounds  tokens  first … last
-  e1         34     48K  read: docs/GEN2-CLONES.md … bash: cargo test --lib
-  e2         34     22K  summary b3 "API exploration" … edit: crates/cli/src/args.rs
-  …
-  e200       12    4.8K  bash: git log --stat
+id     rounds  tokens  first … last
+e1         34     48K  read: docs/GEN2-CLONES.md … bash: cargo test --lib
+e2         34     22K  summary b3 "API exploration" … edit: crates/cli/src/args.rs
+…
+e200       12    4.8K  bash: git log --stat
+</compactable-spans>
 
-Example: compress({from: "e1", to: "e2", summary: "…"})
+<example>
+compact({from: "e1", to: "e2", summary: "…"})
+</example>
+</compact>
 ```
 
 **Row labels are `tool: argument`, and the argument is the tool's *primary* one** — `path`
@@ -216,6 +211,10 @@ corpus.
 fallback to the first string — a label exists to let the model recognise a span, and a
 truncated argument blob does that worse than the bare tool name. A round with no tool call
 at all is labelled by its first line of text.
+
+**`A span can be one entry: from == to`** is the replacement for the old table heading, which
+was the only place the single-entry case was stated. The heading itself is gone: the
+`<compactable-spans>` element says what the table is.
 
 **The example always names ids that are in the table above it** — the first entry, and the
 second if there is one, otherwise the first again. An earlier version printed a fixed
@@ -237,11 +236,10 @@ Reachable, and it happened on the first live run: the model put five tool calls 
 message, so the session held two rounds, H1 excluded both, and the table came back empty.
 
 ```
-Nothing is foldable yet — every round so far is still in flight or immediately behind the
-one in flight. Ask again when the conversation is longer.
+Nothing is compactable yet, try again when the conversation is longer.
 ```
 
-No table, no example, **and no §3a instruction**: 388 tokens of guidance on choosing a span
+No table, no example, **and no §3a instruction**: 337 tokens of guidance on choosing a span
 is waste when there is no span to choose (P1), and the paragraph alone reads as a complete
 answer. An example naming ids that do not exist is what caused the model to fold `e2–e3` in
 that run (C8 — the failure was our information, not the model).
@@ -253,14 +251,14 @@ There are two decisions, and each needs different text at a different moment.
 **Whether to fold at all** is decided when the nudge arrives, before anything has been paid.
 If the rules for it are in the menu, the model has to spend a tool call and ~5.4K tokens to
 learn what it would have been choosing between — and if the answer is "nothing here is
-finished", that call was waste. So what qualifies as foldable, that folding destroys nothing,
-and what a fold costs are in the nudge (§7).
+finished", that call was waste. So what qualifies, and the fact that declining is allowed, are
+in the nudge (§7).
 
 **Which span, and what the summary must contain** is decided with the table in front of the
 model. That text is read immediately before the summary is written and is paid only on the
 turns where a fold actually happens, so it stays here (§3a).
 
-**What the split costs.** A model can call `compress()` with no nudge — §1 tells it the tool
+**What the split costs.** A model can call `compact()` with no nudge — §1 tells it the tool
 exists — and DESIGN §18 measures **6 nudges across 26 sessions in three days**, so most folds
 happen on that path. Those folds no longer see the positive half of the selection rule. The
 half that keeps a fold *safe* — keep out what the current step is still reading, keep out the
@@ -273,9 +271,9 @@ decision is actually made. Neither text is duplicated.
 
 ---
 
-## 4. `compress(...)` → success
+## 4. `compact(...)` → success
 
-> Folded e1–e37 into b5. 412K → 3.1K, 38 messages replaced. Original:
+> Compacted e1–e37 into b5. 412K → 3.1K, 38 messages replaced. Original:
 > `~/.pi/agent/context-fold/01a094/b5.txt`
 
 Carries the block id, the real span, and the path. Their issue #376 is exactly the first two
@@ -286,17 +284,17 @@ block ledger drifts from the session."*
 
 ---
 
-## 5. `compress(...)` → failure
+## 5. `compact(...)` → failure
 
 Each names the id and the next action (P3).
 
 | Case | Text |
 |---|---|
-| Unknown id | `"e412" is not in the current list. Call compress() for the current one.` |
+| Unknown id | `"e412" is not in the current list. Call compact() for the current one.` |
 | `to` before `from` | `"to" (e3) is before "from" (e40).` |
 | Bad JSON | the parser's own error, verbatim, once. |
 | Empty summary | `summary is required and cannot be empty.` |
-| The span replaces nothing | `Folding e1–e3 would replace nothing: the list is out of date. Call compress() for the current one.` |
+| The span replaces nothing | `Compacting e1–e3 would replace nothing: the list is out of date. Call compact() for the current one.` |
 
 There is no "would orphan a block" failure either. It existed while `compress` took an
 array of spans, where one span could take over another block's anchor. With one span per
@@ -321,7 +319,7 @@ Failed calls and their results stay in the conversation untouched. No collapsing
 Replaces the folded span, permanently, in every later request.
 
 ```
-<summary block="b5" msgs="38" tokens="412K→3.1K" original="~/.pi/agent/context-fold/01a094/b5.txt">
+<summary full-transcript="~/.pi/agent/context-fold/01a094/b5.txt">
 …the model's summary text…
 </summary>
 ```
@@ -356,23 +354,23 @@ than the tokens it saves.
 
 ```
 <pi-context-fold>
-640K of 1.0M used, +200K since the last check. ~420K foldable in 199 entries.
+This is a reminder that you handle the context compaction yourself. 640K of 1.0M context used. You will be reminded again after another 200K of growth.
 
-Fold only if there is finished work in the way: exploration that led nowhere, tool output
-you have already used, a phase whose result is recorded. Nothing is destroyed — what you
-fold is written to a file and stays searchable — and a fold costs one menu call plus the
-summary you write. If nothing qualifies, carry on with the work; this is reported again
-after another 200K of growth.
+You do not have to compact after this message, compact only if there is a large chunk of finished work in the way: exploration that led nowhere, tool output you have already used, a phase whose result is recorded. If nothing qualifies, carry on with the work.
 
-compress() lists the spans, with the rules for choosing one and writing its summary.
+You can choose to compact at any time you seem suitable. To compact, call `compact()` with no arguments to list the spans and the summary writing instructions, then choose the span to compact.
 </pi-context-fold>
 ```
 
-**147 tokens**, measured, up from 43. The extra 104 buy the decision itself: without them the
-model cannot tell whether folding is worth a 5.4K menu call, and the cheapest way to find out
+**160 tokens**, measured, up from 43. The extra 117 buy the decision itself: without them the
+model cannot tell whether compacting is worth a 5.4K menu call, and the cheapest way to find out
 is to make the call. It does **not** start a turn of its own — the model reads it at the start
 of its next turn either way, and waking the model to tell it that nothing is required spends a
 model call on nothing.
+
+*"You do not have to compact after this message"* is the one sentence that has to be there. Every
+other message this extension sends is something the model must act on, and a report that looks
+like those gets acted on too.
 
 The 200K figure is interpolated from `NUDGE_GROWTH_TOKENS`, so the sentence cannot drift from
 the constant that produces it.
@@ -386,20 +384,14 @@ to act on it.
 
 ```
 <pi-context-fold>
-910K of 1.0M used, +200K since the last check. ~420K foldable in 199 entries.
+This is a reminder that you handle the context compaction yourself. 910K of 1.0M context used. This is the last reminder before this session runs out of context.
 
-There is no room left for another report, so this is the last one. When the window fills,
-the older half of this session is removed from view uncompressed: it is written to a file
-and stays searchable, but nothing summarises it for you. Fold now, and fold everything
-that is finished: exploration that led nowhere, tool output you have already used, a
-phase whose result is recorded.
-
-compress() lists the spans, with the rules for choosing one and writing its summary.
+Compact as soon as possible. Call `compact()` with no arguments to list the spans and the summary writing instructions, then choose the span to compact.
 </pi-context-fold>
 ```
 
-**147 tokens**, measured. It states the consequence rather than the urgency: §8 is what
-actually happens next, and the model can weigh that better than it can weigh the word "urgent".
+**88 tokens**, measured — shorter than the ordinary nudge, because everything that helps the
+model decline is gone. What happens next, in full, is §8.
 
 The prior art shows the cost of getting this wrong: `acp-kernel` ships its 1,179-token
 rules in the system prompt **and** again in full inside every nudge.
@@ -453,33 +445,42 @@ The footer status, under the key `pi-context-fold`, which `pi-powerline-footer` 
 own segment:
 
 ```
-folded 312K, 4 blocks
+compacted 312K, 4 blocks
 ```
 
-A `compress()` call that asked for the menu, and its result. The menu itself is ~5.4K tokens
+A `compact()` call that asked for the menu, and its result. The menu itself is ~5.4K tokens
 of ids and guidance, and reading it is the model's job, so you get its size instead:
 
 ```
-compress
-199 entries listed, ~420K foldable.
+compact
+199 entries listed, ~420K compactable.
 ```
 
-A `compress(...)` call that folded a span, and its result. The path is left out, because the
+A `compact(...)` call that folded a span, and its result. The path is left out, because the
 summary in the view already carries it:
 
 ```
-compress e1–e37
-Folded e1–e37 into b5.
+compact e1–e37
+Compacted e1–e37 into b5.
 412K → 3.1K, 38 messages replaced.
 ```
 
-The nudge, labelled so it is not read as the model's own words:
+The nudge, labelled so it is not read as the model's own words. How much is compactable is not
+here either: saying it meant building the whole menu on every nudge to count it.
 
 ```
 [pi-context-fold]
 
-640K of 1.0M used, +200K since the last check.
-~420K foldable in 199 entries.
+640K of 1.0M context used.
+```
+
+The last nudge adds one line, because it is the one you would want to see coming:
+
+```
+[pi-context-fold]
+
+910K of 1.0M context used.
+Last reminder before the context runs out.
 ```
 
 ---
@@ -488,16 +489,16 @@ The nudge, labelled so it is not read as the model's own words:
 
 | | Tokens |
 |---|---|
-| **Every request** (system prompt + one tool schema) | **205** |
-| Per nudge | 147, either kind |
-| Per menu | ~5,355 (388 of it instruction) |
-| Per fold | ~50 result + ~30 permanent prefix |
+| **Every request** (system prompt + one tool schema) | **255** |
+| Per nudge | 160, or 88 for the last one |
+| Per menu | ~5,300 (337 of it instruction) |
+| Per fold | ~50 result + ~15 permanent prefix |
 
 The original, **measured** rather than estimated: **3,704 tokens of system prompt in every
 request**, plus four tool schemas, plus a ref tag on every message in context, plus 1,366
 tokens per nudge of which 1,179 repeat the system prompt verbatim.
 
-Ours: **205 tokens per request**, and the 388-token instruction is paid only on the turns
+Ours: **255 tokens per request**, and the 337-token instruction is paid only on the turns
 where a fold actually happens.
 
 ---

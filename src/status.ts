@@ -10,6 +10,6 @@ export function setFoldStatus(ctx: { ui: Pick<ExtensionUIContext, "setStatus"> }
 	const folded = blocks.reduce((sum, block) => sum + block.tokensBefore - block.tokensAfter, 0);
 	ctx.ui.setStatus(
 		STATUS_KEY,
-		`folded ${shortTokens(folded)}, ${blocks.length} block${blocks.length === 1 ? "" : "s"}`,
+		`compacted ${shortTokens(folded)}, ${blocks.length} block${blocks.length === 1 ? "" : "s"}`,
 	);
 }

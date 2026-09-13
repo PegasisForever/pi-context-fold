@@ -27,16 +27,16 @@ different instruction from every other harness, and the reason this one can be s
 
 - **Almost nothing to see.** No command, no on/off switch. One footer line, and one row
   per fold. It manages itself.
-- When context has grown by 200K tokens, a 147-token nudge is added to the conversation. It
+- When context has grown by 200K tokens, a 160-token nudge is added to the conversation. It
   reports the pressure and says what is worth folding; the model decides. Nothing is required
   of it, and it does not interrupt what you are doing.
 - Once there is no room left for another nudge, the last one says so and asks for the fold.
   That is the only one that starts a turn of its own, because after it the window fills and
   the older half of the session is cut from view with no summary.
-- The model calls `compress()` with no arguments and gets a menu — the foldable conversation
+- The model calls `compact()` with no arguments and gets a menu — the foldable conversation
   partitioned into at most 200 contiguous entries, `e1…e200`.
 - It picks a span and writes a summary. That span leaves the view, replaced by
-  `<summary block="b5" msgs="38" tokens="412K→3.1K" original="…/b5.txt">`.
+  `<summary full-transcript="…/b5.txt">`.
 - The original goes to `~/.pi/agent/context-fold/<session>/b5.txt`. The model is told in its
   system prompt to search that folder before asking you to repeat something — and it does.
 - On a context overflow, the older half is cut mechanically and written to a file. No second

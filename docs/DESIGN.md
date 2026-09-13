@@ -76,12 +76,12 @@ Everything in §17 is what those reviews changed.
 | 1 | Overflow recovery is mechanical: the older 50% is written to a file and replaced by a note, supplied to Pi at `session_before_compact`. No model call (§8). |
 | 2 | Decisions happen at `turn_end` — one iteration of Pi's inner loop, not one user prompt (§2 D3). |
 | 3 | The model addresses **menu entries** (`e1…e200`, ephemeral) and **blocks**. Rounds are internal only (§5). |
-| 4 | The menu is **on demand** — `compress()` with no arguments returns it (§6, §8). |
-| 5 | After a fold, the compress tool-call block and its result are removed; the block id is prefixed on the summary (§6). |
+| 4 | The menu is **on demand** — `compact()` with no arguments returns it (§6, §8). |
+| 5 | After a fold, the compact tool-call block and its result are removed; the transcript path is on the summary (§6). |
 | 6 | *(superseded by 27 — skills get no special handling; see §9.)* |
 | 7 | No "recent tokens" reserve. H1 is the only recency rule (§4). |
 | 8 | Nothing is protected by tool name (§4 P3). |
-| 9 | **One tool, `compress`.** No `recall`: folded originals are written to a file at fold time and the model reads or greps them (§6). |
+| 9 | **One tool, `compact`.** No `recall`: folded originals are written to a file at fold time and the model reads or greps them (§6). |
 | 10 | One tier. No promotion, no generations. |
 | 11 | No on/off switch. To disable it, uninstall it. |
 | 12 | No `contextLimit` key. Pi already overrides a window per model in `~/.pi/agent/models.json`. |
@@ -94,7 +94,7 @@ Everything in §17 is what those reviews changed.
 | 19 | **The view is built from session entries, not from `event.messages`** (§3). Forced by a measured fact, see §17, row 19.1. |
 | 20 | *(superseded by 21 — there is no meter of our own; `ctx.getContextUsage()` is the number.)* |
 | 21 | **No meter of our own.** `ctx.getContextUsage()` is the context number (§7). |
-| 22 | The newest **failed** compress pair stays visible (§6). |
+| 22 | The newest **failed** compact pair stays visible (§6). |
 | 23 | No `/acp` command. One `setStatus` line in Pi's footer (§6). |
 | 24 | *(superseded by 27 — there is no protected content.)* |
 | 25 | The menu partitions by round count and treats block summaries as ordinary entries (§5). |
@@ -298,14 +298,14 @@ guarantee; it is not a target.
 
 ## 6. Tools
 
-**One tool: `compress`.** There is no `recall` and no slash command.
+**One tool: `compact`.** There is no `recall` and no slash command.
 
-### `compress`
+### `compact`
 
 **No arguments → the menu.** With arguments → fold.
 
 ```
-compress({ from: "e3", to: "e40", summary: "…" })
+compact({ from: "e3", to: "e40", summary: "…" })
 ```
 
 `from`/`to` are inclusive and must both be in the menu we last issued. **One span per
@@ -378,7 +378,7 @@ After a **successful** fold:
   Note what this is not: no `Round` type, no enumeration, no `View.rounds`. Round alignment
   falls out of closing a relation that was already there, so C3's deletion of rounds from
   step 1 stands.
-- **Remove the `compress` tool-call block and its result.** Not the whole assistant
+- **Remove the `compact` tool-call block and its result.** Not the whole assistant
   message — 8.6% of assistant messages carry two or more tool calls, so dropping the
   message orphans a sibling's result, and pi-ai repairs orphan *calls* but not orphan
   *results* (`transform-messages.js:125-184`).
@@ -388,20 +388,21 @@ After a **successful** fold:
   69% of this user's assistant messages carry signed thinking; signatures are per-block and
   never chained, so removing them is safe.
 - **Also remove the menu call and its ~5K result**, same rules.
-- The summary message is wrapped in `<summary block="b5" msgs="38" tokens="412K→3.1K"
-  original="…/b5.txt">`. That follows Pi's own convention for system-authored context —
-  it wraps its compaction and branch summaries the same way (`messages.js:7-17`) — so the
-  model needs no sentence explaining that the text is a record rather than an instruction.
-  It is also the one structured thing we emit, so our own projection can find it again by
-  parsing rather than by a regex over prose.
+- The summary message is wrapped in `<summary full-transcript="…/b5.txt">`. That follows Pi's
+  own convention for system-authored context — it wraps its compaction and branch summaries
+  the same way (`messages.js:7-17`) — so the model needs no sentence explaining that the text
+  is a record rather than an instruction. **One attribute**: the path is the only thing in it
+  the model can act on. The block id, the message count and the two token numbers were there
+  for us, and we read them from the record, not from the text. Nothing parses this wrapper
+  back — the projection rebuilds it from the record on every request.
 
 ### Failures stay visible, untouched
 
-**A failed compress call and its result are left exactly as they are.** No collapsing, no
+**A failed compact call and its result are left exactly as they are.** No collapsing, no
 one-line replacement, no bookkeeping.
 
 acp-kernel ships `KEEP_LAST_ORPHANED = 2` with the comment: *"failures must stay observable
-or a deterministic model re-issues the same no-op compress forever, pinned at a fixed point
+or a deterministic model re-issues the same no-op compact forever, pinned at a fixed point
 (3,849 identical calls over 5h13m under KEEP_LAST_ORPHANED=0)"*. So failures must be
 visible. The first draft then added a rule to collapse *older* failures to one line, which
 is machinery for a case that should barely exist: the two causes of mass failure in the
@@ -417,7 +418,7 @@ renderer and never sends, so it costs nothing.
 
 They are not the same text, and they must not be. The menu is ~5.4K tokens of entry ids and
 folding guidance written for a model that is about to choose a span; printing it in the
-terminal fills the screen with something you have no use for. So `compress()` with no
+terminal fills the screen with something you have no use for. So `compact()` with no
 arguments shows you one line — how many entries, how much is foldable — and a fold shows you
 what it replaced and by how much, without the file path the summary in the view already
 carries. `docs/MODEL-FACING-TEXT.md` §9 holds both, side by side, so the split can be
@@ -515,18 +516,23 @@ that is the reason, and it is the whole reason.
 There is no benefit floor. The model decides whether a fold is worth making; we only decide
 when to ask.
 
-**The nudge is 147 tokens, and it is a report, not an order.** It states the pressure and
-hands the decision back: fold if something in the way is finished, otherwise carry on. That
-is the same rule as the paragraph above — the model decides whether a fold is worth making —
-applied to the text instead of only to the code. A nudge that demands a fold gets one whether
-or not anything is finished, and a summary written over live work costs more than it saves.
+**The nudge is 160 tokens, and it is a report, not an order.** It states the pressure and
+hands the decision back, in as many words: *"You do not have to compact after this message."*
+That is the same rule as the paragraph above — the model decides whether a fold is worth
+making — applied to the text instead of only to the code. A nudge that demands a fold gets one
+whether or not anything is finished, and a summary written over live work costs more than it
+saves.
 
-**What the nudge carries is what the decision needs**: what qualifies as foldable, that
-nothing is destroyed, and what a fold costs. Those were in the menu until now, which put them
-behind a 5.4K tool call the model had to pay before it could tell whether it wanted to make
-it. What stays in the menu is what the *next* decision needs — which span, and what the
-summary must contain (§17, row 19.67). Neither text is duplicated; exact text and the cost of
-the split are in `docs/MODEL-FACING-TEXT.md` §3c and §7.
+**What the nudge carries is what the decision needs**: what qualifies, and that declining is
+allowed. Those were in the menu until now, which put them behind a 5.4K tool call the model had
+to pay before it could tell whether it wanted to make it. What stays in the menu is what the
+*next* decision needs — which span, and what the summary must contain (§17, row 19.67). That
+nothing is destroyed moved the other way, into the system prompt, because it is still true after
+the menu has left the view. Neither text is duplicated; exact text is in
+`docs/MODEL-FACING-TEXT.md` §3c and §7.
+
+**The nudge does not say how much is compactable.** Saying it meant building the whole 5.4K menu
+on every nudge to count it, and the model gets the real list from `compact()` a moment later.
 
 Cadence: at most one nudge per round, and none in the round straight after a fold. Keyed to
 the round, never to the user prompt.
@@ -681,7 +687,7 @@ number nobody can measure does not get a knob. They are constants in the source 
 
 Deleting the loader deleted the failure with it. A config read happens at `session_start`, pi
 catches a throw from a handler and carries on, and tool registration used to sit behind that
-read — so one mistyped key left the session with **no `compress` tool at all**, for its whole
+read — so one mistyped key left the session with **no `compact` tool at all**, for its whole
 life, while the system prompt went on saying the tool existed. Reproduced. Nothing this
 extension needs is decided by a file any more.
 
@@ -901,6 +907,8 @@ fires at a sensible moment.
 | 19.50 | "menu tokens are excluded from the growth measurement" | they are not; the menu result just leaves the view next round | the arithmetic was wrong (20K, not 200K) and Pi's single number has nothing to subtract from |
 | 19.51 | A "hold the summary until no call is pending" condition | complete the closure's transitivity instead | the mid-round case becomes unrepresentable rather than handled — C4 |
 | 19.52 | "excluding compaction entries makes coverage contiguous" | it does not; coverage can split regardless | a span with no compaction entry, contiguous when folded, splits when a newer compaction hoists past an older one |
+| 19.70 | The tool is `compress`, and the model is told to "fold" | it is `compact`, and the verb is compact everywhere the model or the TUI reads | the word the model already knows for this operation; `fold` was ours, and it had to be taught |
+| 19.69 | `<summary block="b5" msgs="38" tokens="412K→3.1K" original="…">` | `<summary full-transcript="…">` | three of the four attributes were for us, and we read them from the record; the model can only act on the path |
 | 19.68 | Every nudge wakes the model with `triggerTurn: true` | only the last one does | a message the model may ignore is not worth a model call; the rule it was copied from is pi-background's finished job, where the user is waiting on the result |
 | 19.67 | All folding guidance in the menu (19.41) | split: what qualifies for a fold is in the nudge, span and summary rules stay in the menu | deciding *whether* to fold happens before the menu is paid for, so the rules for that decision sat behind the 5.4K call the model needed them to judge |
 | 19.66 | Validate `firstKeptEntryId` against `branchEntries` | deleted | the cut point comes from `buildContextEntries()`, a subset of the branch, so a bad id is unrepresentable — and the check's only action was a throw, which 19.65 forbids |

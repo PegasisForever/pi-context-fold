@@ -3,7 +3,6 @@ import { type FoldState, registerCompress } from "./compress.ts";
 import { blocksDir } from "./dump.ts";
 import { registerEmergency } from "./emergency.ts";
 import { log } from "./log.ts";
-import { buildMenu } from "./menu.ts";
 import { projectSlots, shortTokens } from "./project.ts";
 import { labelled, type Shown } from "./shown.ts";
 import { liveBlocks } from "./state.ts";
@@ -87,67 +86,53 @@ function nudge(pi: ExtensionAPI, ctx: ExtensionContext, state: FoldState): void 
 	const growth = predicted - state.baseline;
 	if (growth < NUDGE_GROWTH_TOKENS) return;
 
-	const menu = buildMenu(
-		buildView(ctx.sessionManager.buildContextEntries()),
-		liveBlocks(ctx.sessionManager),
-	);
 	// A nudge needs NUDGE_GROWTH_TOKENS of growth to fire, so with less than that left in the window
-	// there is no room for another one: this is the last warning before the overflow cut (§7).
+	// there is no room for another one: this is the last reminder before the context runs out (§7).
 	const last = usage.contextWindow - predicted < NUDGE_GROWTH_TOKENS;
-	const pressure = `${shortTokens(predicted)} of ${shortTokens(usage.contextWindow)} used, +${shortTokens(growth)} since the last check.`;
-	const foldable = `~${shortTokens(menu.tokens)} foldable in ${menu.entries.length} entries.`;
+	// How much is compactable is not here. Saying it meant building the whole 5.4K menu on every
+	// nudge to count it, and the model gets the real list from `compact()` a moment later anyway.
+	const used = `${shortTokens(predicted)} of ${shortTokens(usage.contextWindow)} context used.`;
 	// A turn of its own only for the last nudge, which has to be acted on before the next overflow.
 	// An ordinary nudge reports and waits: it is read at the start of the next turn either way, and
 	// waking the model to tell it that nothing is required costs a model call for nothing.
 	pi.sendMessage(
 		{
 			customType: NAME,
-			content: `<${NAME}>\n${pressure} ${foldable}\n\n${last ? LAST_NUDGE : NUDGE}\n</${NAME}>`,
+			content: `<${NAME}>\n${REMINDER} ${used} ${last ? LAST_NUDGE : NUDGE}\n</${NAME}>`,
 			details: {
-				lines: last
-					? [pressure, foldable, "Last nudge before the overflow cut."]
-					: [pressure, foldable],
+				lines: last ? [used, "Last reminder before the context runs out."] : [used],
 			},
 			display: true,
 		},
 		{ deliverAs: "followUp", triggerTurn: last },
 	);
 	state.baseline = predicted;
-	log("nudge", { predicted, growth, foldable: menu.tokens, entries: menu.entries.length, last });
+	log("nudge", { predicted, growth, last });
 }
 
+/** MODEL-FACING-TEXT.md §7. The first sentence of every nudge, before the two that differ. */
+const REMINDER = "This is a reminder that you handle the context compaction yourself.";
+
 /**
- * MODEL-FACING-TEXT.md §7. Neutral: it reports pressure and hands the decision back. What it carries
- * is what the model needs to decide *whether* to fold, which it cannot get from the menu without
- * paying 5.4K tokens for it first. The rules for picking the exact span and writing the summary stay
- * in the menu, where they are read at the moment they apply (§3a).
+ * MODEL-FACING-TEXT.md §7. A report, not an order: it says what the pressure is and hands the
+ * decision back. What it carries is what the model needs to decide *whether* to compact, which it
+ * cannot get from the menu without paying 5.4K tokens for it first. The rules for picking the span
+ * and writing the summary stay in the menu, where they are read at the moment they apply (§3a).
  */
-const NUDGE = `Fold only if there is finished work in the way: exploration that led nowhere, tool output
-you have already used, a phase whose result is recorded. Nothing is destroyed — what you
-fold is written to a file and stays searchable — and a fold costs one menu call plus the
-summary you write. If nothing qualifies, carry on with the work; this is reported again
-after another ${shortTokens(NUDGE_GROWTH_TOKENS)} of growth.
+const NUDGE = `You will be reminded again after another ${shortTokens(NUDGE_GROWTH_TOKENS)} of growth.
 
-compress() lists the spans, with the rules for choosing one and writing its summary.`;
+You do not have to compact after this message, compact only if there is a large chunk of finished work in the way: exploration that led nowhere, tool output you have already used, a phase whose result is recorded. If nothing qualifies, carry on with the work.
 
-/** MODEL-FACING-TEXT.md §7. The same report when no second one can fire, so it asks for the fold. */
-const LAST_NUDGE = `There is no room left for another report, so this is the last one. When the window fills,
-the older half of this session is removed from view uncompressed: it is written to a file
-and stays searchable, but nothing summarises it for you. Fold now, and fold everything
-that is finished: exploration that led nowhere, tool output you have already used, a
-phase whose result is recorded.
+You can choose to compact at any time you see fit. To compact, call \`compact()\` with no arguments to list the spans and the summary writing instructions, then choose the span to compact.`;
 
-compress() lists the spans, with the rules for choosing one and writing its summary.`;
+/** MODEL-FACING-TEXT.md §7a. The same reminder when no second one can fire, so it asks for the fold. */
+const LAST_NUDGE = `This is the last reminder before this session runs out of context.
+
+Compact as soon as possible. Call \`compact()\` with no arguments to list the spans and the summary writing instructions, then choose the span to compact.`;
 
 /** PROMPTS.md §1, in every request. The folder line is the one habit worth its tokens everywhere. */
 function systemPrompt(sessionId: string): string {
-	return `### Context
+	return `### Context Management
 
-This session manages its own context. When it grows large you will be told how much of it
-is old enough to fold; folding replaces older parts of the conversation with summaries you
-write, and it is yours to decide. \`compress()\` with no arguments lists what can be folded.
-
-Everything you have folded in this session is written to
-\`${blocksDir(sessionId)}/\` as plain text, one file per block. Search that folder before
-you ask the user to repeat something — the answer is usually already there.`;
+You manage your own context. When it grows large you will be notified to compact some of your context. Compacting replaces older parts of the conversation with summaries you write. Compacting keeps the context lean which helps you to perform better. The compacted range and the summary are yours to decide. \`compact()\` with no arguments lists what can be compacted. The transcript you have compacted is written to \`${blocksDir(sessionId)}/\` as plain text, one file per compaction. Search that folder when you encounter an ambiguity or have a question, the answer is usually already there.`;
 }

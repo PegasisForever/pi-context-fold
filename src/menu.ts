@@ -90,10 +90,9 @@ function entryOf(id: string, group: Slot[][]): MenuEntry {
 
 function roundLabel(round: Slot[]): string {
 	const block = round.find((slot) => slot.block !== undefined)?.block;
-	if (block !== undefined) {
-		const head = `summary ${block.id} `;
-		return `${head}"${clip(firstLine([block.summary]), LABEL_MAX - head.length - 2)}"`;
-	}
+	// No block id: the summary in the view no longer carries one, so a row naming `b3` would name
+	// something the model has never seen.
+	if (block !== undefined) return `summary "${clip(firstLine([block.summary]), LABEL_MAX - 10)}"`;
 	const call = round
 		.flatMap((slot) => (slot.message.role === "assistant" ? slot.message.content : []))
 		.find((part) => part.type === "toolCall");
@@ -131,44 +130,48 @@ function render(entries: MenuEntry[]): string {
 	if (first === undefined) return EMPTY;
 	const rows = entries.map(
 		(entry) =>
-			`  ${entry.id.padEnd(7)}${String(entry.rounds).padStart(6)}${shortTokens(entry.tokens).padStart(8)}  ` +
+			`${entry.id.padEnd(7)}${String(entry.rounds).padStart(6)}${shortTokens(entry.tokens).padStart(8)}  ` +
 			`${entry.first === entry.last ? entry.first : `${entry.first} … ${entry.last}`}`,
 	);
-	const example = `Example: compress({from: "${first.id}", to: "${entries[1]?.id ?? first.id}", summary: "…"})`;
-	return [INSTRUCTION, "", HEADING, "", COLUMNS, ...rows, "", example].join("\n");
+	const example = `compact({from: "${first.id}", to: "${entries[1]?.id ?? first.id}", summary: "…"})`;
+	return [
+		INSTRUCTION,
+		"",
+		"<compactable-spans>",
+		"",
+		COLUMNS,
+		...rows,
+		"</compactable-spans>",
+		"",
+		"<example>",
+		example,
+		"</example>",
+		"</compact>",
+	].join("\n");
 }
 
-const HEADING = "Foldable now — pick a span with from/to, or one entry with from == to.";
-const COLUMNS = "  id     rounds  tokens  first … last";
+const COLUMNS = "id     rounds  tokens  first … last";
 
-export const EMPTY = `Nothing is foldable yet — every round so far is still in flight or immediately behind the
-one in flight. Ask again when the conversation is longer.`;
+export const EMPTY = "Nothing is compactable yet, try again when the conversation is longer.";
 
-export const INSTRUCTION = `Choosing the span. Keep out what the current step is still reading, and any instructions
-you are still working under. A fold reissues the entry ids, so call compress() again for a
-fresh list before folding again.
+export const INSTRUCTION = `<compact>
+<how-to-choose-the-span>
+Avoid compacting recent turns.
+Compact finished work: exploration that led nowhere, tool output you have already used, a phase whose result is recorded.
+A span can be one entry: from == to.
+</how-to-choose-the-span>
 
-User messages may be folded like anything else. But a requirement, constraint or
-acceptance criterion the user gave you must be quoted verbatim in the summary: it still
-binds afterwards, and the summary becomes the only place it stays in view.
-
-Writing the summary. You are its reader, later in this session, and the original stays on
-disk. So write an index into recoverable text rather than a replacement for it: carry the
-conclusions you would otherwise have to derive again, and say enough about the rest to know
-when the file is worth opening.
-
-Keep verbatim, because these are the search keys into that file and a paraphrase cannot be
-grepped: full paths with line numbers, identifiers and signatures, error strings, versions,
-numbers, thresholds. Keep what each piece of work was trying to settle, each decision with
-the reason for it, each dead end with what killed it, and every question left open.
-
-Drop the bulk you will not read again: logs, file contents, repeated status checks, the
-discussion that reached a conclusion — keep the conclusion. For anything large you drop,
-leave one line saying what was in it.
-
-Record what happened, not what to do next; the work still to do is in the live
-conversation. No fixed sections — thematic headers if the span covers several concerns,
-dense bullets, whatever length the span needs.`;
+<how-to-summarize>
+You and only you will be the reader of the summary.
+Carry the conclusions you would otherwise have to derive again, and say enough about the rest to know when the full transcript file is worth opening.
+The intent, corrections, etc from the user must be fully preserved in the summary.
+Keep a summary of what you did in response to the user messages.
+Keep verbatim for these because they are the search keys into the transcript file: full paths, identifiers and signatures, error strings, versions, numbers, thresholds, etc.
+Keep what each piece of work was trying to settle, each decision with the reason for it, each dead end with what killed it, and every question left open.
+Drop the bulk you will not need again: logs, file contents, repeated status checks, the discussion that reached a conclusion — keep the conclusion. For anything large you drop, leave one line saying what was in it.
+Record what happened, not what to do next.
+No fixed sections: thematic headers if the span covers several concerns, dense bullets, whatever length the span needs.
+</how-to-summarize>`;
 
 function toolCallIds(message: Extract<Msg, { role: "assistant" }>): string[] {
 	return message.content.flatMap((part) => (part.type === "toolCall" ? [part.id] : []));
