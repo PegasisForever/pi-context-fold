@@ -1,8 +1,7 @@
 import { type ExtensionAPI, estimateTokens, type SessionEntry } from "@earendil-works/pi-coding-agent";
 import { type Static, Type } from "typebox";
-import type { Config } from "./config.ts";
 import { originalPath, writeOriginal } from "./dump.ts";
-import { log, logDebug } from "./log.ts";
+import { log } from "./log.ts";
 import { buildMenu, type Menu, type MenuEntry } from "./menu.ts";
 import { noArguments, projectSlots, shortTokens, TOOL_NAME } from "./project.ts";
 import { header, type Shown, shown } from "./shown.ts";
@@ -28,13 +27,12 @@ interface Fold {
 	summary: string;
 }
 
-/** What survives between calls: the menu the ids belong to, whether this round folded, the config. */
+/** What survives between calls: the menu the ids belong to, and whether this round folded. */
 export interface FoldState {
 	menu: Menu | undefined;
 	folded: boolean;
 	baseline: number;
 	reported: Set<string>;
-	config: Config;
 }
 
 // The one tool (§6). No arguments returns the menu; arguments fold. Arguments are Pi's own parse and
@@ -52,10 +50,6 @@ export function registerCompress(pi: ExtensionAPI, state: FoldState): void {
 			const blocks = liveBlocks(ctx.sessionManager);
 			if (noArguments(params)) {
 				state.menu = buildMenu(view, blocks);
-				logDebug(state.config, "menu", {
-					entries: state.menu.entries.length,
-					tokens: state.menu.tokens,
-				});
 				return {
 					content: [{ type: "text", text: state.menu.text }],
 					// The menu costs ~5.4K tokens and reads as a wall of ids. You get the size of it.
@@ -77,17 +71,18 @@ export function registerCompress(pi: ExtensionAPI, state: FoldState): void {
 				);
 			}
 
-			writeOriginal(sessionId, record.id, taken);
-			pi.appendEntry<FoldBlock>("fold-block", record);
-			log(state.config, "fold", {
+			// The log goes first. `appendFileSync` can throw, and after the two writes below that
+			// would report a failure for a fold which had in fact been applied.
+			log("fold", {
 				block: record.id,
 				msgs: record.msgs,
 				tokensBefore: record.tokensBefore,
 				tokensAfter: record.tokensAfter,
 			});
-			// §10, the one measurement with no decision attached: the fold still happens.
-			if (record.tokensAfter >= record.tokensBefore)
-				log(state.config, "fold-grew", { block: record.id });
+			// The one measurement with no decision attached: the fold still happens.
+			if (record.tokensAfter >= record.tokensBefore) log("fold-grew", { block: record.id });
+			writeOriginal(sessionId, record.id, taken);
+			pi.appendEntry<FoldBlock>("fold-block", record);
 			state.menu = undefined;
 			state.folded = true;
 			return {

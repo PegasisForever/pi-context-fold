@@ -27,7 +27,7 @@ different instruction from every other harness, and the reason this one can be s
 
 - **Almost nothing to see.** No command, no on/off switch. One footer line, and one row
   per fold. It manages itself.
-- When context has grown by 200K tokens, a ~43-token nudge is delivered and starts a turn, so
+- When context has grown by 200K tokens, a 43-token nudge is delivered and starts a turn, so
   the fold happens then rather than waiting for your next message.
 - The model calls `compress()` with no arguments and gets a menu — the foldable conversation
   partitioned into at most 200 contiguous entries, `e1…e200`.
@@ -69,21 +69,14 @@ not copy — so moving or deleting the directory breaks the install silently.
 
 ## Config
 
-`~/.pi/agent/context-fold.json`, overridden by `<project>/.pi/context-fold.json`. Three keys.
+None. There is no configuration file and no key to set. The three that once existed were
+never set by anybody, so they are constants in the source.
 
-```jsonc
-{
-  "nudgeGrowthTokens": 200000,  // re-nudge after this much growth
-  "logFile": null,              // default ~/.pi/agent/context-fold.log
-  "debug": false
-}
-```
+Setting `PI_CODING_AGENT_DIR` moves everything this writes — the folded originals and the
+log — along with pi's own directory.
 
-An unknown key throws and names it. A missing file uses the defaults. Setting
-`PI_CODING_AGENT_DIR` moves all of this, the folded originals included.
-
-Worth setting `"debug": true` for the first session, then
-`tail -f ~/.pi/agent/context-fold.log`.
+Worth running `tail -f ~/.pi/agent/context-fold.log` for the first session: one JSON line per
+fold, per nudge, and per block it can no longer use.
 
 ## Showing it in pi-powerline-footer
 
@@ -104,7 +97,7 @@ dedicated segment instead:
 
 ```bash
 pi remove ~/pi-context-fold
-rm ~/.pi/agent/context-fold.json ~/.pi/agent/context-fold.log
+rm ~/.pi/agent/context-fold.log
 rm -rf ~/.pi/agent/context-fold      # only when no folded session still matters
 ```
 
@@ -139,7 +132,7 @@ add"*.
 
 ## Size
 
-**980 lines of source, 44 tests.** One tool, three config keys, no slash command.
+**914 lines of source, 4 tests.** One tool, no config, no slash command.
 
 The extension it replaces is ~9,950 lines. Roughly 250 mutations were run against this tree
 across seven review rounds; §17 records what each one changed.

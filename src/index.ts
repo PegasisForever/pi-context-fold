@@ -1,9 +1,8 @@
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { type FoldState, registerCompress } from "./compress.ts";
-import { DEFAULTS, loadConfig } from "./config.ts";
 import { blocksDir } from "./dump.ts";
 import { registerEmergency } from "./emergency.ts";
-import { log, logDebug } from "./log.ts";
+import { log } from "./log.ts";
 import { buildMenu } from "./menu.ts";
 import { projectSlots, shortTokens } from "./project.ts";
 import { labelled, type Shown } from "./shown.ts";
@@ -15,14 +14,14 @@ import { buildView } from "./view.ts";
 /** The tag on every message this extension injects, and the name on every renderer it registers. */
 const NAME = "pi-context-fold";
 
+/**
+ * Nudge once the context has grown by this much since the last nudge (§8). Not a setting: there is
+ * one user, and a number nobody has ever wanted to change is a constant (C3, C9).
+ */
+const NUDGE_GROWTH_TOKENS = 200_000;
+
 export default function contextFold(pi: ExtensionAPI): void {
-	const state: FoldState = {
-		menu: undefined,
-		folded: false,
-		baseline: 0,
-		config: DEFAULTS,
-		reported: new Set(),
-	};
+	const state: FoldState = { menu: undefined, folded: false, baseline: 0, reported: new Set() };
 
 	pi.on("context", (_event, ctx) => ({
 		messages: projectSlots(
@@ -35,19 +34,15 @@ export default function contextFold(pi: ExtensionAPI): void {
 		systemPrompt: `${event.systemPrompt}\n\n${systemPrompt(ctx.sessionManager.getSessionId())}`,
 	}));
 
-	// No tool of its own, so it is registered where every other handler is.
-	registerEmergency(pi, state);
+	// Registered here, never inside a handler: pi catches a handler throw and carries on, so a tool
+	// registered in `session_start` disappears for the whole session the first time anything there
+	// fails — while the system prompt goes on saying it exists.
+	registerCompress(pi, state);
+	registerEmergency(pi);
 
 	pi.registerMessageRenderer<Shown>(NAME, (message, _options, theme) =>
 		labelled(theme, NAME, message.details?.lines ?? []),
 	);
-
-	// §13, read once. A throw here reaches the user as `Extension error (<path>): …` — measured, in
-	// both print and interactive mode — and the session then runs on the defaults.
-	pi.on("session_start", (_event, ctx) => {
-		state.config = loadConfig(ctx.sessionManager.getCwd());
-		registerCompress(pi, state);
-	});
 
 	// Reporting and every decision happen here, never in the `context` handler, which stays a pure
 	// projection with no I/O and no decisions (D2, D3).
@@ -67,7 +62,7 @@ function reportOrphans(ctx: ExtensionContext, state: FoldState, blocks: FoldBloc
 	for (const block of blocks) {
 		if (block.entryIds.some((id) => present.has(id)) || state.reported.has(block.id)) continue;
 		state.reported.add(block.id);
-		log(state.config, "block-without-summary", { block: block.id, entries: block.entryIds.length });
+		log("block-without-summary", { block: block.id, entries: block.entryIds.length });
 	}
 }
 
@@ -90,10 +85,7 @@ function nudge(pi: ExtensionAPI, ctx: ExtensionContext, state: FoldState): void 
 		return;
 	}
 	const growth = predicted - state.baseline;
-	if (growth < state.config.nudgeGrowthTokens) {
-		logDebug(state.config, "quiet", { predicted, baseline: state.baseline });
-		return;
-	}
+	if (growth < NUDGE_GROWTH_TOKENS) return;
 
 	const menu = buildMenu(
 		buildView(ctx.sessionManager.buildContextEntries()),
@@ -113,7 +105,7 @@ function nudge(pi: ExtensionAPI, ctx: ExtensionContext, state: FoldState): void 
 		{ deliverAs: "followUp", triggerTurn: true },
 	);
 	state.baseline = predicted;
-	log(state.config, "nudge", { predicted, growth, foldable: menu.tokens, entries: menu.entries.length });
+	log("nudge", { predicted, growth, foldable: menu.tokens, entries: menu.entries.length });
 }
 
 /** PROMPTS.md §1, in every request. The folder line is the one habit worth its tokens everywhere. */

@@ -5,7 +5,6 @@ import {
 	estimateTokens,
 	type SessionBeforeCompactEvent,
 } from "@earendil-works/pi-coding-agent";
-import type { FoldState } from "./compress.ts";
 import { messageText, writeOverflow } from "./dump.ts";
 import { log } from "./log.ts";
 import { rounds } from "./menu.ts";
@@ -18,12 +17,12 @@ import { buildView } from "./view.ts";
  * summarisation call itself (D5), so its summariser must never run: ordinary pressure is cancelled,
  * the two real compactions are answered with a mechanical cut, and nothing here throws or cancels.
  * No model call, so there is no timeout, no rate limit and no fallback for either. */
-export function registerEmergency(pi: ExtensionAPI, state: FoldState): void {
+export function registerEmergency(pi: ExtensionAPI): void {
 	pi.on("session_before_compact", (event, ctx) => {
 		if (event.reason === "threshold") return { cancel: true };
 		const compaction = recover(event, ctx);
 		try {
-			log(state.config, "emergency", { reason: event.reason, keptFrom: compaction.firstKeptEntryId });
+			log("emergency", { reason: event.reason, keptFrom: compaction.firstKeptEntryId });
 		} catch {
 			// The one error this project drops. Rethrowing it would hand the turn to Pi's summariser.
 		}

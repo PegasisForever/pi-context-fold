@@ -14,11 +14,11 @@ Every Pi seam named below was read in the installed source; file:line references
 
 **This section outranks everything below it.** The rest of this document is a snapshot of
 reasoning, not a contract. If a decision below contradicts a principle here, the decision
-is wrong: change it, and record the change in §0. Never implement something you believe is
+is wrong: change the decision and this document with it. Never implement something you believe is
 wrong merely because it is written down. A design document that is followed against its
 own principles is how the thing we are replacing got to 9,950 lines.
 
-**C1. This is a personal tool.** One user, one machine, no public release. No backwards
+**C1. This is a personal tool.** One user, one fleet, no public release. No backwards
 compatibility, no migration path, no deprecation cycle. Breaking changes are free. Delete
 rather than deprecate.
 
@@ -110,8 +110,8 @@ principle to be recorded here. In practice the table above carries the *current*
 and **§17 carries every change with the evidence that forced it** — including changes to
 this document made during the build. §17 is the audit trail; this table is the state.
 
-**Progress** (§16 build order). All five steps are landed. 859 source lines, 1,679 test
-lines, 44 tests. What has and has not been verified is §19.
+**Progress** (§16 build order). All five steps are landed. 914 source lines, 178 test lines,
+4 tests. What has and has not been verified is §19.
 
 The audit trail is §17; every row there is a change some review forced, with the evidence.
 
@@ -216,11 +216,6 @@ to exclude. A rule that cannot be violated is not a rule.
 is mechanically exempt from folding. The model may fold any span the menu offers, and the
 projection has no notion of content that survives inside a fold.
 
-Two earlier drafts had one. The first exempted skills and kept user messages in place; the
-second unified them and closed the set under H2, because a skill load is a *tool result* and
-keeping it while dropping its `read` call emits an orphan tool result — the one direction
-pi-ai does not repair. Both are deleted (§17, row 19.39).
-
 What replaced them is **information, not enforcement** (C8). The instruction returned with
 the menu (MODEL-FACING-TEXT.md §3a) names two things to keep out of a span — whatever the current step
 is reading, and a skill's instructions while still working under them — and one thing to
@@ -278,30 +273,13 @@ to stay stable across a fold, a compaction, a fork or a restart.
 overflow file (§8); folding it wraps a lossy summary around a lossy summary and loses the
 pointer. That is the whole reason.
 
-An earlier draft added that excluding them also makes coverage contiguous in the view. It
-does not (§17, row 19.52): a span containing no compaction entry, contiguous when folded,
-still splits later — the previously hoisted compaction entry falls back into path order
-*inside* the span when a newer one is hoisted past it. Coverage can be non-contiguous
-whatever the menu offers, which is why §6 pins the summary to the first covered entry and
-a test holds it there.
-
 **Block summaries are ordinary entries.** A block's summary is a message in the view, so
 the partition treats it like any other content. Folding a span that happens to include one
 produces a new block covering it — which is exactly the "condense my earlier summaries"
 operation, with no separate concept, no second id namespace, and no line in the system
 prompt (§17, row 19.33).
 
-```
-Foldable now — pick a span with from/to, or one entry with from == to.
-
-  id     rounds  tokens  first … last
-  e1         34     48K  read: docs/GEN2-CLONES.md … bash: cargo test --lib
-  e2         34     22K  summary b3 "API exploration" … edit: crates/cli/src/args.rs
-  …
-  e200       12    4.8K  bash: git log --stat
-
-Example: compress({from: "e1", to: "e2", summary: "…"})
-```
+The menu as the model reads it is transcribed in `docs/MODEL-FACING-TEXT.md` §3b.
 
 ### How the partition works
 
@@ -315,11 +293,6 @@ names a `from` and a `to`; everything between is included however the middle is 
 `chunk` rounds. One line. Note what the ceiling does: the count lands between 100 and 200,
 not at 200 — 224 foldable rounds give 112 entries, 401 give 134. "At most 200" is the
 guarantee; it is not a target.
-
-The first draft divided by token weight so that an oversized round would land in its own
-entry. At 200 entries that distinction does not pay for itself: a large round ends up in a
-span with ~33 others, all of them old, and folding the span is what the model wanted anyway
-(§17, row 19.34).
 
 ---
 
@@ -340,8 +313,8 @@ call.** The array an earlier draft took is gone: the model never batched in any 
 and the array produced overlapping-span content loss, an order-dependent check and a
 half-appliable write loop — all three unrepresentable with a single span (§17, row 19.59).
 
-Arguments are parsed with plain `JSON.parse`. No lenient parsing, no brace repair, no
-stringified-array handling — that machinery exists in the original for a Qwen model in
+Arguments arrive already parsed and schema-checked by Pi. No lenient parsing, no brace repair,
+no stringified-array handling — that machinery exists in the original for a Qwen model in
 non-strict tool mode and a local quantised 27B (#253, #250), which C2 excludes. A parse
 failure returns the parser's own error, once, verbatim (C7).
 
@@ -466,17 +439,6 @@ folded 312K, 4 blocks
 **The line carries only what Pi cannot know** — how many blocks exist and how much has been
 folded. It shows no context number at all.
 
-Three drafts got here. The first printed ours beside Pi's and called the divergence a
-diagnostic; the second kept it as a cross-check; the third printed Pi's alone. All three
-were duplicating something the footer already shows, and a compatibility study settled it
-(§17, row 19.63): `pi-powerline-footer` calls `ctx.ui.setFooter`, which **replaces** Pi's
-own footer, and re-exposes extension statuses through a segment whose overflow row silently
-**drops** whatever does not fit (`index.ts:1120-1126`). Measured at 80 columns our line
-never rendered at all; at 220 it did. Dropping the context pair takes the line from ~42
-visible columns to ~21, which fits — and powerline also exposes a `customItems` API that
-promotes any status key to a dedicated segment in the primary row, where the overflow logic
-cannot reach it (§17, row 19.64).
-
 The `?` case goes with the number it guarded.
 
 Note on spacing: Pi collapses runs of spaces (`footer.js`), powerline does not. Single
@@ -492,10 +454,6 @@ const predicted = usage?.tokens ?? undefined; // null right after a compaction
 ```
 
 That is the whole meter. **We do not compute a context size.**
-
-An earlier draft built one: `getLastAssistantUsage` for the anchor, Pi's `estimateTokens`
-for the tail, `predicted = real + tail`. It was written, tested and measured — and the
-measurement is why it is gone (§17, row 19.45):
 
 - It equalled `ctx.getContextUsage().tokens` on **23 of 23** recorded sessions. Of course it
   did: Pi's number is the same anchor and the same estimator over the same entry list
@@ -554,16 +512,10 @@ reintroduced, by the very line meant to prevent it (§17.9).
 a fold followed. Otherwise a dead 5K rides every later request for the rest of the session —
 that is the reason, and it is the whole reason.
 
-An earlier draft also said menu tokens must be *excluded from the growth measurement*,
-arguing four unacted menus would trigger the next nudge by themselves. The arithmetic was
-wrong: 4 × 5K is 20K against a 200K step, not 200K. And with §7's single number from Pi
-there is nothing to subtract from. So the exclusion is both unnecessary and unimplementable;
-what remains is a ~5K overshoot for one round, 2.5% of the step (§17, row 19.50).
-
 There is no benefit floor. The model decides whether a fold is worth making; we only decide
 when to ask.
 
-**The nudge is 48 tokens** — the pressure and the prompt to act, nothing else. Exact text in
+**The nudge is 43 tokens** — the pressure and the prompt to act, nothing else. Exact text in
 `docs/MODEL-FACING-TEXT.md` §7.
 
 The folding guidance is in the **menu**, not here (§17, row 19.41). §18 measures 6 nudges
@@ -604,26 +556,9 @@ interface CompactionResult { summary: string; firstKeptEntryId: string;
    threw when no boundary freed half, the handler caught it and cancelled, and Pi turns a
    cancelled *automatic* compaction into a turn that vanishes with nothing printed
    (`agent-session.ts:2284-2300`, `:1141`). That case is reachable — one live round held 8
-   of 9 messages (§17, row 19.60). Validate the id is on `branchEntries` — Pi does not, and a bad
-   `firstKeptEntryId` makes `buildContextEntries` silently discard the entire pre-compaction
-   history and report success (reproduced).
-
-   An earlier version of this step said "keep walking back until the cut orphans no live
-   block", so that an orphaned block became unrepresentable. **Measured, that rule frees
-   zero tokens** — on all ten recorded sessions with enough rounds, against 35K–184K for the
-   plain cut (§17, row 19.57). A folded block's covered entries still exist but weigh
-   nothing in the view, so "keep one covered entry" pins the cut at or before the block's
-   **first** covered entry, and everything earlier is covered too *when the model folds at
-   the oldest end* — which is the shape this project encourages. A middle fold behaves
-   differently; the measurement is "under 2% freed on 10 of 10 sessions, exactly zero on 7". The recovery then frees
-   nothing, Pi retries, `_overflowRecoveryAttempted` is already set, and the session dies —
-   hardest exactly when the model has been folding, which is the case this project exists
-   for.
-2. Write everything before it to
-   `~/.pi/agent/context-fold/overflow/<sessionId>-<timestamp>.txt` — plain text, one section per
-   message.
-3. Return `{ summary: note, firstKeptEntryId, tokensBefore }` where the note is:
-   `[context] Overflow. The older half of this session (~412K, 1,830 messages) was written to <path>. Use read to retrieve any of it.`
+   of 9 messages (§17, row 19.60). The cut point comes from
+   `buildContextEntries()`, which is a subset of the branch, so an id that is not on the branch
+   is unrepresentable and nothing validates it (§17, row 19.66).
 
    The cut **does** orphan blocks in the older half, deliberately. Each fully-cut block's
    own summary is reproduced verbatim in the note, which is what MODEL-FACING-TEXT §8 specified all
@@ -678,12 +613,7 @@ guarantee the instruction gives for free.
 
 **None.** `sanitize.ts` is deleted.
 
-Both rules in the first draft came from issue #309, which states its own environment: the
-same local quantised 27B as #250 and #199. The double-escaped `\uXXXX` text is few-shot
-imitation by a small model, and the hallucinated user quote is small-model fidelity. C2
-excludes both.
-
-One measurement survives, in `log.ts`, with no decision attached: if a summary is not
+One measurement survives, in `compress.ts`, with no decision attached: if a summary is not
 smaller than the content it replaces, log it. The fold still happens.
 
 ---
@@ -702,73 +632,51 @@ smaller than the content it replaces, log it. The fold still happens.
 | `state.ts` | block records via `appendEntry`, read from `getBranch()` | 80 |
 | `status.ts` | `setStatus` line | 20 |
 | `types.ts` | shared types (absent from the first estimate) | 32 |
-| `config.ts` | three keys, read once | 12 |
-| `log.ts` | one JSON line writer | 25 |
-| **Total** | **actual 905**. The first estimate said ~830 and §17 settled ~950. `emergency.ts` at 125 against 60 is the real overrun. | |
+| `shown.ts` | the TUI components both readers' halves are drawn with | 41 |
+| `log.ts` | one JSON line writer | 13 |
+| **Total** | **actual 914**, against a first estimate of ~830. | |
 
 Against ~9,950 lines of source in the original.
 
 ---
 
-## 12. Invariants — the test suite
+## 12. The test suite
 
-Replay recorded real session `.jsonl` files and assert:
+**Four tests, 178 lines.** They build their own fixtures and depend on nothing outside the
+repository: block records read back from the branch and absorbed correctly, the status line,
+the two model-facing strings §4 and §6 read out of `docs/MODEL-FACING-TEXT.md` rather than
+copied, and the one token format.
 
-1. Output = input − covered + summaries, counted in **entries**, not wire params. Anthropic
-   merges consecutive tool results into one param (`anthropic-messages.js:1051`).
-2. **No historical message text ever changes.** Byte comparison across turns.
-3. A tool **result** is never emitted without its call. Pi repairs orphan *calls*
-   (`transform-messages.js:138`) but not orphan results — only one direction can bite.
-4. A fold never removes an assistant message that still holds another tool call.
-5. Every folded block has a readable file whose content matches the entries it covered.
-6. Replaying the same log twice yields identical state.
+**There used to be forty-four.** The other forty replayed a corpus of 25 recorded session
+`.jsonl` files from one machine, by absolute path. Everything in §19's *Verified* column was
+measured by those tests, once, against that corpus — and it is the evidence, not the tests,
+that mattered. The corpus is not in this repository and is not reproducible here, so the
+suite reported forty-four tests and ran four. A suite that cannot run is a record, not a
+suite (C4). The record is §19; the tests are gone.
 
-**And one that replay cannot do.** The recorded `.jsonl` files do not contain what other
-`context` handlers do live. Step 1 of the build order must also run against the array the
-real handler chain delivers, with `pi-goal-x` installed, or it will pass while being wrong.
+What that costs, plainly: the invariants those forty tests checked — that the projection is
+byte-identical to Pi's own output, that a tool result is never emitted without its call, that
+a fold never orphans a live block — are now argued rather than checked on every change. §19
+says which is which.
+
+---
+
+## 13. No config
+
+There is no configuration file and no configuration key. The three that existed —
+`nudgeGrowthTokens`, `logFile`, `debug` — were never set by anybody: no file has ever been
+written on the one machine this runs on, and the only thing that ever changed `logFile` was the
+test suite, which is circular. C3 forbids a key without a reason to turn it, and C9 says a
+number nobody can measure does not get a knob. They are constants in the source now.
+
+Deleting the loader deleted the failure with it. A config read happens at `session_start`, pi
+catches a throw from a handler and carries on, and tool registration used to sit behind that
+read — so one mistyped key left the session with **no `compress` tool at all**, for its whole
+life, while the system prompt went on saying the tool existed. Reproduced. Nothing this
+extension needs is decided by a file any more.
 
 ---
 
-## 13. Config
-
-`~/.pi/agent/context-fold.json`, overridden by `<project>/.pi/context-fold.json`. Files only —
-**no environment variables**. **Read once at `session_start`.** No mtime reload: one user
-with three keys restarts the session.
-
-```jsonc
-{
-  "nudgeGrowthTokens": 200000,
-  "logFile": null,               // default ~/.pi/agent/context-fold.log
-  "debug": false
-}
-```
-
-Loader rules, each one a shipped bug in the original:
-
-- **An unknown key throws**, naming it. Three string comparisons, not the allowlist
-  machinery that caused the original's #354. A silent typo is a quiet wrong answer (C7).
-- **A missing file uses defaults. A malformed file throws.** Missing is the normal case;
-  malformed is a mistake and must be visible.
-- **Every key has a test that proves its non-default value changes behaviour.** The
-  original shipped `toolOutputMaxBytes` with a documented default that never took effect
-  (#210), and compared `enabled` with `!== false` so `{enabled:false}` did nothing (#275).
-
-Deliberately **not** configurable, each for a stated reason:
-
-| Not a key | Why |
-|---|---|
-| on/off | Uninstall the extension. |
-| context window | Pi already does it per model in `~/.pi/agent/models.json` → `providers.<p>.modelOverrides.<m>.contextWindow`. |
-| protected tools | Nothing is protected by name. |
-| skill protection | Nothing is protected; the instruction covers it (§4b). |
-| benefit floor | Removed entirely. |
-| output headroom | Fixed at `contextWindow − model.maxTokens`. |
-| emergency keep share | Fixed at 50% of the view. |
-| `MENU_MAX` | Fixed at 200. |
-| summary length | No limit; the model sizes its own summaries. |
-| prompt text | The original's `prompts` override plus its `acknowledgePromptsRisk` gate cost ~90 lines and had no user. |
-
----
 
 ## 13a. Model-facing text
 
@@ -776,13 +684,8 @@ Every string the model sees — system prompt, tool descriptions and schemas, th
 tool results, the nudge, the fold prefix, the overflow note — is specified in
 **`docs/MODEL-FACING-TEXT.md`**, with its token budget and its per-request cost.
 
-Per-request cost of that text: **≈ 160 tokens** (system prompt + one tool schema). The
-original, measured rather than estimated: **3,704 tokens of system prompt in every
-request**, plus four tool schemas, plus a ref tag on every message, plus 1,366 tokens per
-nudge of which 1,179 repeat the system prompt verbatim.
-
-The folding guidance sits in the menu — 423 tokens, paid only on the turns where a fold
-actually happens.
+Its Totals section carries the per-request cost and the comparison with the original. The
+numbers live there, once, so they cannot disagree with themselves.
 
 ---
 
@@ -865,6 +768,11 @@ means only reasoning supports it.
 
 ### Verified
 
+**Verified once, on 2026-09-12, against a corpus of 25 recorded sessions on one machine — not
+reproducible from this repository.** The tests that produced these numbers are deleted (§12);
+what survives is this table. Read every row as a measurement that was made, not as a check
+that runs.
+
 | | Evidence |
 |---|---|
 | The view is rebuilt losslessly from session entries | byte-equality on **25 of 25** recorded sessions, ~16,000 entries |
@@ -874,9 +782,9 @@ means only reasoning supports it.
 | A fold that would replace nothing is refused | the stale-menu case, reproduced and tested |
 | Blocks absorb correctly | chains of three, already-absorbed ids, entries already gone |
 | Replay is deterministic | same log twice, identical state |
-| Model-facing strings match this project's contract | §1, §2, §4, §5, §6, §7, §8 read from `docs/MODEL-FACING-TEXT.md`, not copied |
+| Model-facing strings match this project's contract | §4 and §6 are still read from `docs/MODEL-FACING-TEXT.md` on every run, not copied; §1, §2, §3a, §3b, §5, §7, §8 and §9 were checked the same way by the deleted tests |
 
-44 tests. Across seven audit rounds, roughly **250 mutations** were run against the tree; the
+Across seven audit rounds, roughly **250 mutations** were run against the tree; the
 survivors are listed in §17 and each is either equivalent or now covered.
 
 ### Observed live
@@ -892,7 +800,6 @@ loaded: 19 context events, 0 provider errors.
 | | Evidence |
 |---|---|
 | It builds and installs | `pi install <path>` records the path and Pi loads `src/index.ts` directly, so there is no build step; `private: true` and the missing `files` field are harmless because a local install copies nothing and Pi rewrites the peer imports to its own copies |
-| The built bundle behaves identically to the source | both loaded in one process, driven through all 25 sessions — **0 differences** in prompt, projection, menu, status, nudge and compaction |
 | It works in the owner's real extension set | `pi-lens`, `pi-goal-x`, `pi-powerline-footer`, `pi-mcp-adapter` all loaded; four folds, 33,970 → 20,113 tokens, no other extension misbehaved |
 | Removing it is safe | a session with four folds and a compaction, re-run with the extension gone: 122 entries → 118 messages, all 34 tool results present, the model answered correctly. Folding is a view transformation only |
 | Plausible user mishaps are recoverable | Ctrl-C mid-fold (self-heals), `--continue`, manual `/compact`, mid-session model switch, no config, unwritable cache (fails loudly, records nothing), two sessions on one project |
@@ -999,7 +906,7 @@ fires at a sensible moment.
 | 19.55 | The nudge is appended by the `context` handler each turn | it is a persisted Pi message sent at `turn_end` | appending in the handler is a decision inside a handler D2 requires to be pure; persisting costs ~48 tokens per nudge (~6 per three days) and survives restarts |
 | 19.53 | A fixpoint closure over the call↔result relation | two bounded hops | measured max eccentricity 2 over 6,666 components; and a fixpoint would cascade coverage across unrelated rounds if a call id were ever repeated, where a bounded pass cannot — the general version is the *less* safe one |
 
-Module estimate: **~950 lines**, down from ~990, ~1,385, ~1,810 in the first draft, and
+Module estimate: **~950 lines**; the tree is 914. Down from ~990, ~1,385, ~1,810 in the first draft, and
 ~9,950 in the original.
 
 ---

@@ -3,7 +3,7 @@ import { shortTokens } from "./project.ts";
 import type { FoldBlock } from "./types.ts";
 
 /** The status key is the extension's name, so a powerline `customItems` entry can name it. */
-export const STATUS_KEY = "pi-context-fold";
+const STATUS_KEY = "pi-context-fold";
 
 // No context number: at 80 columns pi-powerline-footer's overflow row dropped the whole line (§6).
 export function setFoldStatus(ctx: { ui: Pick<ExtensionUIContext, "setStatus"> }, blocks: FoldBlock[]): void {

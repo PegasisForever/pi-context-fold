@@ -73,10 +73,6 @@ export function messageText(message: Msg): string {
 		case "branchSummary":
 		case "compactionSummary":
 			return message.summary;
-		default: {
-			const unreachable: never = message;
-			throw new Error(`unhandled message role in ${JSON.stringify(unreachable)}`);
-		}
 	}
 }
 

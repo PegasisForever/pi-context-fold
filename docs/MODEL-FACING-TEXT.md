@@ -61,7 +61,7 @@ content inside a tag.** We follow it, with three consequences:
 | Our text | Marker | Why |
 |---|---|---|
 | Fold summary | `<summary block=… original=…>` | the model already learned what `<summary>` means from Pi's compaction |
-| Nudge | `<context-manager>` | an instruction, not a record — must not look like a summary |
+| Nudge | `<pi-context-fold>` | an instruction, not a record — must not look like a summary |
 | Overflow note | **none** | it becomes Pi's `compactionSummary`, so Pi wraps it for us |
 | Tool results | none | the tool protocol already attributes them |
 
@@ -85,7 +85,7 @@ Injected on `before_agent_start`. In every request.
 > `~/.pi/agent/context-fold/<session>/` as plain text, one file per block. Search that folder before
 > you ask the user to repeat something — the answer is usually already there.
 
-**≈ 75 tokens.** The original is ≈ 1,400.
+**121 tokens**, with a real session id in the path. The original is ≈ 1,400.
 
 What is absent, and why:
 
@@ -130,7 +130,7 @@ batched — it always called `compress` per span — while the array produced th
 (overlapping spans deleting a summary, an order-dependent check, and a write loop that could
 half-apply). One span makes all three unrepresentable (§17, row 19.59).
 
-**≈ 85 tokens with the schema.** Guidance on *what makes a good summary* is not here; it is
+**72 tokens with the schema.** Guidance on *what makes a good summary* is not here; it is
 in the nudge, where it is read immediately before being used.
 
 **Decided:** `from`/`to` as two fields rather than one `span: "e3-e40"` string. Two are
@@ -175,7 +175,7 @@ conversation. No fixed sections — thematic headers if the span covers several 
 dense bullets, whatever length the span needs.
 ```
 
-**439 tokens**, measured with Pi's own `estimateTokens`. Compare the prior art: `billion-context-pi`'s system
+**433 tokens**, measured with Pi's own `estimateTokens`. Compare the prior art: `billion-context-pi`'s system
 prompt is **3,704 tokens in every request**, and its nudge adds 1,366 of which 1,179
 duplicate the system prompt verbatim.
 
@@ -239,7 +239,7 @@ Nothing is foldable yet — every round so far is still in flight or immediately
 one in flight. Ask again when the conversation is longer.
 ```
 
-No table, no example, **and no §3a instruction**: 439 tokens of guidance on choosing a span
+No table, no example, **and no §3a instruction**: 433 tokens of guidance on choosing a span
 is waste when there is no span to choose (P1), and the paragraph alone reads as a complete
 answer. An example naming ids that do not exist is what caused the model to fold `e2–e3` in
 that run (C8 — the failure was our information, not the model).
@@ -322,9 +322,9 @@ a `user` message as *interrupting a tool flow*, which is what makes a mis-placed
 hard provider rejection rather than a cosmetic oddity (DESIGN §6). Any other role would fail
 differently, or silently. Neither document said this until an audit pointed it out.
 
-`412K` rather than `412.0K`: Pi's own footer formats with one rule — a decimal below 10K,
-rounded below 1M, `M` above — and pinning `412.0K` here was the only thing forcing this
-project to carry two number formatters. The document yielded (C1: breaking changes are
+`412K` rather than `412.0K`: one rule — a decimal below 10K, rounded below 1M, `M` above —
+and pinning `412.0K` here was the only thing forcing this project to carry two number
+formatters. The document yielded (C1: breaking changes are
 free).
 
 **≈ 35 tokens of wrapper.** Four jobs: names the block, shows what was given up, points at
@@ -439,16 +439,16 @@ The nudge, labelled so it is not read as the model's own words:
 
 | | Tokens |
 |---|---|
-| **Every request** (system prompt + one tool schema) | **≈ 160** |
+| **Every request** (system prompt + one tool schema) | **193** |
 | Per nudge | 43 |
-| Per menu | ~5,400 (439 of it instruction) |
+| Per menu | ~5,400 (433 of it instruction) |
 | Per fold | ~50 result + ~30 permanent prefix |
 
 The original, **measured** rather than estimated: **3,704 tokens of system prompt in every
 request**, plus four tool schemas, plus a ref tag on every message in context, plus 1,366
 tokens per nudge of which 1,179 repeat the system prompt verbatim.
 
-Ours: **≈160 tokens per request**, and the 439-token instruction is paid only on the turns
+Ours: **193 tokens per request**, and the 433-token instruction is paid only on the turns
 where a fold actually happens.
 
 ---

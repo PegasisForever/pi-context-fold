@@ -18,7 +18,7 @@ export function liveBlocks(
 // entries and its retired calls over: without the call ids, condensing summaries puts the older
 // fold's compress call back in the view, and that call's arguments still carry the whole summary it
 // replaced. Idempotent on an already-absorbed list, so a pending fold can be tested against it.
-export function absorb(blocks: FoldBlock[]): FoldBlock[] {
+function absorb(blocks: FoldBlock[]): FoldBlock[] {
 	const live = new Map<string, FoldBlock>();
 	for (const block of blocks) {
 		const absorbed = new Set(block.blockIds);

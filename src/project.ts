@@ -81,7 +81,11 @@ export function summaryMessage(block: FoldBlock): Msg {
 	};
 }
 
-/** Pi's own footer rule (`footer.ts:24`), so the project carries one number format, not two. */
+/**
+ * One number format for the whole project. It is close to Pi's footer rule but not the same one:
+ * Pi prints `712` and `3.1k`, this prints `0.7K` and `3.1K`. Pi does not export its formatter, so
+ * there is nothing to reuse and the difference is ours to own.
+ */
 export function shortTokens(tokens: number): string {
 	if (tokens < 10_000) return `${(tokens / 1000).toFixed(1)}K`;
 	if (tokens < 1_000_000) return `${Math.round(tokens / 1000)}K`;
