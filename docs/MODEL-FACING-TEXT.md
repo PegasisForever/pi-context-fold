@@ -118,25 +118,43 @@ from a local 27B that C2 excludes.
 
 In every request. The only tool this extension registers.
 
-> Compact one span of the conversation into a summary you write, saving the full transcription to a file, freeing context. Always call `compact()` with no arguments to list what can be compacted, before you compact a span.
+> Compact spans of the conversation into summaries you write, saving the full transcription to a file, freeing context. Always call `compact()` with no arguments to list what can be compacted, before you compact a span.
 
-**Parameters** — all optional; omit them all to get the list.
+**Parameters** — `spans` is the only one, and omitting it is what asks for the list.
 
-- `from` — first entry of the span, e.g. `"e3"`. From the list `compact()` returns.
-- `to` — last entry of the span, inclusive. At or after `from`.
-- `summary` — this text will replace the span in your context.
+- `spans` — the spans to compact. They must not overlap. Omit to get the list.
+  - `from` — first entry of the span, e.g. `"e3"`. From the list `compact()` returns.
+  - `to` — last entry of the span, inclusive. At or after `from`.
+  - `summary` — this text will replace the span in your context.
 
-**One span per call**, not an array of them. An earlier draft took a list, on the reasoning
-that batching saves a menu round trip. Measured: across every live run the model never once
-batched — it always called `compress` per span — while the array produced three defects
-(overlapping spans deleting a summary, an order-dependent check, and a write loop that could
-half-apply). One span makes all three unrepresentable (§17, row 19.59).
+**185 tokens with the schema**, measured as `estimateTokens` over the tool name, the
+description and `JSON.stringify` of the parameter schema — the shape the provider is actually
+sent. Under the same measure the single-span version was 139, so the list of spans costs 46
+tokens in every request. *(This document used to record 72 here, counting the prose only. That
+undercounted; the number changed because the measure did, not only because the schema did.)*
 
-**72 tokens with the schema.** Guidance on *what makes a good summary* is not here; it is
-in the nudge, where it is read immediately before being used.
+Guidance on *what makes a good summary* is not here; it is in the menu, where it is read
+immediately before being used (§3a).
 
 **Decided:** `from`/`to` as two fields rather than one `span: "e3-e40"` string. Two are
-harder to get wrong and validate separately, for ~15 tokens per request.
+harder to get wrong and validate separately.
+
+### 2a. Many spans in one call, and the three defects that cost us the first attempt
+
+An earlier draft took a list and it was withdrawn (§17, row 19.59), because the array produced
+three defects. The list is back, and each defect is answered by construction rather than by
+care:
+
+| Defect | What it did | Why it cannot happen now |
+|---|---|---|
+| Overlapping spans | two spans covering one entry left one summary never emitted, so that content left the view with nothing standing in for it | spans are resolved to index ranges **in the one menu**, sorted, and every neighbouring pair is checked. The menu is a partition of the view, so disjoint index ranges are disjoint messages. A whole call is rejected, never half-accepted |
+| An order-dependent check | validation walked the list applying as it went, so the same spans passed or failed depending on the order they arrived in | every span is resolved against **one** menu snapshot and planned against **one** projection, both taken before any span is looked at. Sorting happens before the overlap check, so the arrival order changes nothing but the order of the result lines |
+| A write loop that could half-apply | a throw part-way through left some spans folded and some not, and the tool reported failure for work that had been done | everything that can fail — resolving, planning, the log, all the transcript files — happens before the first session record is appended. The append loop is the only step left, and if it fails it says how many landed (`3 of 4 spans were compacted, then this failed: …`) rather than reporting a bare failure |
+
+**The ids must be fresh.** A span is only accepted when the list it names came from the current
+assistant message or the one before it. That is not a new rule, it is the existing one made
+enforceable: the menu result is removed from the view one assistant message after it is served
+(§6), so past that point the model is naming ids from a list it can no longer see.
 
 ---
 
@@ -197,7 +215,7 @@ e200       12    4.8K  bash: git log --stat
 </compactable-spans>
 
 <example>
-compact({from: "e1", to: "e2", summary: "…"})
+compact({spans: [{from: "e1", to: "e2", summary: "…"}]})
 </example>
 </compact>
 ```
@@ -273,7 +291,7 @@ decision is actually made. Neither text is duplicated.
 
 ## 4. `compact(...)` → success
 
-> Compacted e1–e37 into b5. 412K → 3.1K, 38 messages replaced. Original:
+> Compacted e1–e37 into b5. 412K → 3.1K, 38 messages replaced. Transcript:
 > `~/.pi/agent/context-fold/01a094/b5.txt`
 
 Carries the block id, the real span, and the path. Their issue #376 is exactly the first two
@@ -293,7 +311,10 @@ Each names the id and the next action (P3).
 | Unknown id | `"e412" is not in the current list. Call compact() for the current one.` |
 | `to` before `from` | `"to" (e3) is before "from" (e40).` |
 | Bad JSON | the parser's own error, verbatim, once. |
-| Empty summary | `summary is required and cannot be empty.` |
+| Empty summary | `summary for e1–e3 cannot be empty.` |
+| Empty list | `spans is empty. Call compact() with no arguments for the list of spans.` |
+| Two spans overlap | `Spans e1–e3 and e3–e9 overlap. Every entry can be in one span only.` |
+| The list is not current | `The list these ids came from is not the current one. Call compact() with no arguments, then compact in your next message.` |
 | The span replaces nothing | `Compacting e1–e3 would replace nothing: the list is out of date. Call compact() for the current one.` |
 
 There is no "would orphan a block" failure either. It existed while `compress` took an
@@ -456,13 +477,14 @@ compact
 199 entries listed, ~420K compactable.
 ```
 
-A `compact(...)` call that folded a span, and its result. The path is left out, because the
-summary in the view already carries it:
+A `compact(...)` call that folded spans, and its result — one row per span, the path left out
+because the summary in the view already carries it. The tool row names the spans in the order
+they were asked for, before any of them is checked:
 
 ```
-compact e1–e37
-Compacted e1–e37 into b5.
-412K → 3.1K, 38 messages replaced.
+compact e1–e37, e40–e44
+Compacted e1–e37 into b5. 412K → 3.1K, 38 messages replaced.
+Compacted e40–e44 into b6. 22K → 0.8K, 9 messages replaced.
 ```
 
 The nudge, labelled so it is not read as the model's own words. How much is compactable is not
@@ -489,7 +511,7 @@ Last reminder before the context runs out.
 
 | | Tokens |
 |---|---|
-| **Every request** (system prompt + one tool schema) | **255** |
+| **Every request** (system prompt + one tool schema) | **343** (158 + 185) |
 | Per nudge | 160, or 88 for the last one |
 | Per menu | ~5,300 (337 of it instruction) |
 | Per fold | ~50 result + ~15 permanent prefix |
@@ -498,7 +520,7 @@ The original, **measured** rather than estimated: **3,704 tokens of system promp
 request**, plus four tool schemas, plus a ref tag on every message in context, plus 1,366
 tokens per nudge of which 1,179 repeat the system prompt verbatim.
 
-Ours: **255 tokens per request**, and the 337-token instruction is paid only on the turns
+Ours: **343 tokens per request**, and the 337-token instruction is paid only on the turns
 where a fold actually happens.
 
 ---

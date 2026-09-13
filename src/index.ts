@@ -20,7 +20,7 @@ const NAME = "pi-context-fold";
 const NUDGE_GROWTH_TOKENS = 200_000;
 
 export default function contextFold(pi: ExtensionAPI): void {
-	const state: FoldState = { menu: undefined, folded: false, baseline: 0, reported: new Set() };
+	const state: FoldState = { menu: undefined, menuAt: 0, folded: false, baseline: 0, reported: new Set() };
 
 	pi.on("context", (_event, ctx) => ({
 		messages: projectSlots(

@@ -81,7 +81,7 @@ Everything in §17 is what those reviews changed.
 | 6 | *(superseded by 27 — skills get no special handling; see §9.)* |
 | 7 | No "recent tokens" reserve. H1 is the only recency rule (§4). |
 | 8 | Nothing is protected by tool name (§4 P3). |
-| 9 | **One tool, `compact`.** No `recall`: folded originals are written to a file at fold time and the model reads or greps them (§6). |
+| 9 | **One tool, `compact`.** No `recall`: folded originals are written to a file at fold time and the model reads or greps them (§6). It takes a list of spans, which must not overlap (§6). |
 | 10 | One tier. No promotion, no generations. |
 | 11 | No on/off switch. To disable it, uninstall it. |
 | 12 | No `contextLimit` key. Pi already overrides a window per model in `~/.pi/agent/models.json`. |
@@ -305,13 +305,33 @@ guarantee; it is not a target.
 **No arguments → the menu.** With arguments → fold.
 
 ```
-compact({ from: "e3", to: "e40", summary: "…" })
+compact({ spans: [{ from: "e3", to: "e40", summary: "…" }, { from: "e44", to: "e50", summary: "…" }] })
 ```
 
-`from`/`to` are inclusive and must both be in the menu we last issued. **One span per
-call.** The array an earlier draft took is gone: the model never batched in any live run,
-and the array produced overlapping-span content loss, an order-dependent check and a
-half-appliable write loop — all three unrepresentable with a single span (§17, row 19.59).
+`from`/`to` are inclusive and must both be in the menu we last issued. **Many spans per call,
+and they must not overlap.**
+
+An earlier draft took an array and it was withdrawn, because it produced three defects (§17,
+row 19.59). The array is back with each defect answered by construction rather than by care
+(§17, row 19.71):
+
+- **Overlap** is a check, not a hope. Every span is resolved to an index range in the one menu,
+  the ranges are sorted, and each neighbouring pair is compared. The menu partitions the view,
+  so disjoint index ranges are disjoint messages, and one overlap rejects the whole call.
+- **Order cannot matter.** Every span is resolved against one menu snapshot and planned against
+  one `projectSlots` result, both taken before the first span is looked at. Nothing a span does
+  is visible to another span. Sorting happens before the overlap check, so the order the model
+  wrote them in changes only the order of the result lines.
+- **Half-application** is pushed into one step. Resolving, planning, the log and every
+  transcript file all run before the first `appendEntry`. The append loop is what remains, and
+  if it fails part way it says how many landed rather than reporting a bare failure.
+
+**The ids must be fresh.** A span is accepted only when the menu it names was served by the
+current assistant message or the one before it (§17, row 19.72). This is the existing rule made
+enforceable rather than a new one: the menu result is removed from the view one assistant
+message after it is served, so past that point the model is naming ids from a list it can no
+longer see. Counting assistant messages in the view is the same clock `staleMenuCalls` uses, so
+the two cannot disagree.
 
 Arguments arrive already parsed and schema-checked by Pi. No lenient parsing, no brace repair,
 no stringified-array handling — that machinery exists in the original for a Qwen model in
@@ -907,6 +927,8 @@ fires at a sensible moment.
 | 19.50 | "menu tokens are excluded from the growth measurement" | they are not; the menu result just leaves the view next round | the arithmetic was wrong (20K, not 200K) and Pi's single number has nothing to subtract from |
 | 19.51 | A "hold the summary until no call is pending" condition | complete the closure's transitivity instead | the mid-round case becomes unrepresentable rather than handled — C4 |
 | 19.52 | "excluding compaction entries makes coverage contiguous" | it does not; coverage can split regardless | a span with no compaction entry, contiguous when folded, splits when a newer compaction hoists past an older one |
+| 19.72 | A span may name any menu we ever issued | only the menu from this assistant message or the one before | the menu result leaves the view one assistant message after it is served, so past that point the model names ids from a list it cannot see |
+| 19.71 | One span per call (19.59) | a list again, with the three defects answered by construction | overlap is a sorted neighbour check on one menu; order cannot matter because every span is resolved and planned against one snapshot; and every step that can throw runs before the first record is appended |
 | 19.70 | The tool is `compress`, and the model is told to "fold" | it is `compact`, and the verb is compact everywhere the model or the TUI reads | the word the model already knows for this operation; `fold` was ours, and it had to be taught |
 | 19.69 | `<summary block="b5" msgs="38" tokens="412K→3.1K" original="…">` | `<summary full-transcript="…">` | three of the four attributes were for us, and we read them from the record; the model can only act on the path |
 | 19.68 | Every nudge wakes the model with `triggerTurn: true` | only the last one does | a message the model may ignore is not worth a model call; the rule it was copied from is pi-background's finished job, where the user is waiting on the result |

@@ -1,16 +1,19 @@
 import assert from "node:assert/strict";
-import { mkdtempSync, readFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 import type { SessionEntry } from "@earendil-works/pi-coding-agent";
-import { resultLine } from "../src/compress.ts";
+import { registerCompress, resultLine } from "../src/compress.ts";
 import { shortTokens, summaryMessage } from "../src/project.ts";
 import { liveBlocks } from "../src/state.ts";
 import { setFoldStatus } from "../src/status.ts";
 import type { FoldBlock, Msg } from "../src/types.ts";
 
 process.env.HOME = mkdtempSync(join(tmpdir(), "context-fold-home-"));
+// Pi makes this directory; the tests drive the extension without Pi, and the fold log is written
+// before anything else, so without it every fold throws at the first line of its own audit trail.
+mkdirSync(join(process.env.HOME, ".pi", "agent"), { recursive: true });
 
 const TEXT = readFileSync(new URL("../docs/MODEL-FACING-TEXT.md", import.meta.url), "utf8");
 
@@ -161,7 +164,7 @@ test("the status line is MODEL-FACING-TEXT.md §9's, and shows no context number
 /** MODEL-FACING-TEXT.md §4 and §6, built with the document's own example values so they compare whole. */
 test("MODEL-FACING-TEXT.md §4 and §6: the success result and the summary wrapper are the document's", () => {
 	const record = block({ id: "b5", msgs: 38, originalPath: "~/.pi/agent/context-fold/01a094/b5.txt" });
-	assert.equal(resultLine(record, "e1", "e37"), flat(quoted("4")).replace(/`/g, ""));
+	assert.equal(resultLine(record, { from: "e1", to: "e37" }), flat(quoted("4")).replace(/`/g, ""));
 
 	const message = summaryMessage({ ...record, summary: "…the model's summary text…" });
 	// §6: the role is load-bearing. pi-ai reads a `user` message as interrupting a tool flow, which
@@ -175,4 +178,130 @@ test("one token format, everywhere", () => {
 		[0, 712, 3_100, 9_999, 10_000, 48_200, 412_000, 999_999, 1_000_000, 1_500_000].map(shortTokens),
 		["0.0K", "0.7K", "3.1K", "10.0K", "10K", "48K", "412K", "1000K", "1.0M", "1.5M"],
 	);
+});
+
+/**
+ * DESIGN §17 row 19.59 listed three defects that withdrew the array of spans. It is back (§2a), and
+ * this pins each one: overlapping spans are rejected whole, the arrival order changes nothing, and
+ * nothing is appended to the session until every step that can throw has already run.
+ */
+function driveCompact() {
+	const entries: SessionEntry[] = [];
+	let n = 0;
+	const round = (tool: string, arg: string) => {
+		n += 1;
+		entries.push({
+			type: "message",
+			id: `x${n}a`,
+			parentId: null,
+			timestamp: "2026-09-12T00:00:00.000Z",
+			message: {
+				role: "assistant",
+				timestamp: n,
+				content: [{ type: "toolCall", id: `c${n}`, name: tool, arguments: { path: arg } }],
+			},
+		} as unknown as SessionEntry);
+		entries.push({
+			type: "message",
+			id: `x${n}b`,
+			parentId: null,
+			timestamp: "2026-09-12T00:00:00.000Z",
+			message: {
+				role: "toolResult",
+				timestamp: n,
+				toolCallId: `c${n}`,
+				toolName: tool,
+				content: "y".repeat(2000),
+				isError: false,
+			},
+		} as unknown as SessionEntry);
+	};
+	for (const name of ["a", "b", "c", "d", "e", "f", "g"]) round("read", `src/${name}.ts`);
+
+	const appended: FoldBlock[] = [];
+	let tool: {
+		execute: (
+			id: string,
+			params: unknown,
+			signal: unknown,
+			onUpdate: unknown,
+			ctx: unknown,
+		) => Promise<{ content: { text: string }[] }>;
+	};
+	const pi = {
+		registerTool: (definition: unknown) => {
+			tool = definition as typeof tool;
+		},
+		appendEntry: (_type: string, data: FoldBlock) => {
+			appended.push(data);
+		},
+	};
+	const state = { menu: undefined, menuAt: 0, folded: false, baseline: 0, reported: new Set<string>() };
+	registerCompress(pi as never, state);
+	const ctx = {
+		sessionManager: {
+			buildContextEntries: () => entries,
+			getBranch: () => appended.map((one, i) => customEntry(`k${i}`, "fold-block", one)),
+			getSessionId: () => "test-session",
+		},
+	};
+	const call = (params: unknown) => tool!.execute("call-1", params, undefined, undefined, ctx);
+	return { call, appended, state, entries };
+}
+
+test("§2a: two spans in one call, and every one of the three defects is refused", async () => {
+	const { call, appended, state } = driveCompact();
+	await call({});
+	assert.ok((state.menu as unknown as { entries: unknown[] }).entries.length >= 4, "need four entries");
+
+	// Defect 1: overlapping spans. Rejected whole — nothing is written, nothing is appended.
+	await assert.rejects(
+		call({
+			spans: [
+				{ from: "e1", to: "e3", summary: "one" },
+				{ from: "e3", to: "e4", summary: "two" },
+			],
+		}),
+		/overlap/,
+	);
+	assert.equal(appended.length, 0, "a rejected call must append nothing");
+
+	// Defect 2: order. The same two spans, given backwards, give the same blocks in view order.
+	const result = await call({
+		spans: [
+			{ from: "e4", to: "e5", summary: "later work" },
+			{ from: "e1", to: "e2", summary: "earlier work" },
+		],
+	});
+	assert.equal(appended.length, 2);
+	assert.deepEqual(
+		appended.map((one) => one.id),
+		["b1", "b2"],
+	);
+	assert.equal(appended[0]?.summary, "earlier work", "b1 must be the earlier span");
+	assert.deepEqual(
+		appended.flatMap((one) => one.entryIds).sort(),
+		[...new Set(appended.flatMap((one) => one.entryIds))].sort(),
+		"two blocks must not claim the same entry",
+	);
+	assert.match(result.content[0]?.text ?? "", /Compacted e1–e2 into b1[\s\S]*Compacted e4–e5 into b2/);
+
+	// Defect 3: the transcript of every block exists before any of them is appended.
+	for (const one of appended) assert.ok(readFileSync(one.originalPath, "utf8").length > 0, one.id);
+});
+
+test("§2a: a span is refused when the list it names is no longer in the view", async () => {
+	const { call, entries } = driveCompact();
+	await call({});
+	// Two more assistant messages: the menu result has left the view, so its ids name nothing visible.
+	for (const id of ["late1", "late2"]) {
+		entries.push({
+			type: "message",
+			id,
+			parentId: null,
+			timestamp: "2026-09-12T00:00:00.000Z",
+			message: { role: "assistant", timestamp: 99, content: [{ type: "text", text: "thinking" }] },
+		} as unknown as SessionEntry);
+	}
+	await assert.rejects(call({ spans: [{ from: "e1", to: "e2", summary: "x" }] }), /not the current one/);
 });

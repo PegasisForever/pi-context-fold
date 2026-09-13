@@ -35,8 +35,8 @@ different instruction from every other harness, and the reason this one can be s
   the older half of the session is cut from view with no summary.
 - The model calls `compact()` with no arguments and gets a menu — the foldable conversation
   partitioned into at most 200 contiguous entries, `e1…e200`.
-- It picks a span and writes a summary. That span leaves the view, replaced by
-  `<summary full-transcript="…/b5.txt">`.
+- It picks one or more spans, which must not overlap, and writes a summary for each. Those
+  spans leave the view, each replaced by `<summary full-transcript="…/b5.txt">`.
 - The original goes to `~/.pi/agent/context-fold/<session>/b5.txt`. The model is told in its
   system prompt to search that folder before asking you to repeat something — and it does.
 - On a context overflow, the older half is cut mechanically and written to a file. No second
