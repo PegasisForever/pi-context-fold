@@ -133,7 +133,7 @@ function render(entries: MenuEntry[]): string {
 			`${entry.id.padEnd(7)}${String(entry.rounds).padStart(6)}${shortTokens(entry.tokens).padStart(8)}  ` +
 			`${entry.first === entry.last ? entry.first : `${entry.first} … ${entry.last}`}`,
 	);
-	const example = `compact({from: "${first.id}", to: "${entries[1]?.id ?? first.id}", summary: "…"})`;
+	const example = `compact({spans: [{from: "${first.id}", to: "${entries[1]?.id ?? first.id}", summary: "…"}]})`;
 	return [
 		INSTRUCTION,
 		"",
@@ -158,7 +158,7 @@ export const INSTRUCTION = `<compact>
 <how-to-choose-the-span>
 Avoid compacting recent turns.
 Compact finished work: exploration that led nowhere, tool output you have already used, a phase whose result is recorded.
-A span can be one entry: from == to.
+To compact one entry, set from and to to the same id.
 </how-to-choose-the-span>
 
 <how-to-summarize>

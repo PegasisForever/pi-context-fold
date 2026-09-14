@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { test } from "node:test";
 import type { SessionEntry } from "@earendil-works/pi-coding-agent";
 import { registerFold, resultLine } from "../src/fold.ts";
-import { shortTokens, summaryMessage } from "../src/project.ts";
+import { NUDGE_CUSTOM_TYPE, projectSlots, shortTokens, summaryMessage } from "../src/project.ts";
 import { liveBlocks } from "../src/state.ts";
 import { setFoldStatus } from "../src/status.ts";
 import type { FoldBlock, Msg } from "../src/types.ts";
@@ -138,6 +138,46 @@ test("fold-block records read back from the branch, and absorbing a block takes 
 		"call-2",
 		"call-3",
 	]);
+});
+
+/**
+ * A1: a fold retires every nudge older than it. The nudge existed when the fold landed, so the
+ * model has acted on it and its numbers are stale. No span mapping: creation order is enough, so a
+ * spontaneous fold retires the same way. A nudge sent after the fold stays.
+ */
+test("A1: a fold retires every nudge older than it, and keeps newer ones", () => {
+	const user = (text: string, timestamp: number): Msg =>
+		({ role: "user", content: [{ type: "text", text }], timestamp }) as Msg;
+	const assistant = (text: string, timestamp: number): Msg =>
+		({ role: "assistant", content: [{ type: "text", text }], timestamp }) as Msg;
+	const nudge = (timestamp: number): Msg =>
+		({
+			role: "custom",
+			customType: NUDGE_CUSTOM_TYPE,
+			content: "<pi-context-fold>old numbers</pi-context-fold>",
+			display: true,
+			timestamp,
+		}) as Msg;
+	const view = [
+		{ entryId: "e-u1", message: user("old work", 10) },
+		{ entryId: "e-n1", message: nudge(100) },
+		{ entryId: "e-a1", message: assistant("working", 150) },
+		{ entryId: "e-n2", message: nudge(300) },
+		{ entryId: "e-u2", message: user("new work", 350) },
+	];
+	const folded = block({ id: "b1", entryIds: ["e-u1"], timestamp: 200 });
+
+	const slots = projectSlots(view, [folded]);
+	const kept = slots.map((slot) => slot.entryId ?? slot.block?.id);
+	// The summary anchors at the folded entry, the pre-fold nudge is gone, the post-fold one stays.
+	assert.deepEqual(kept, ["b1", "e-a1", "e-n2", "e-u2"]);
+
+	// With no fold yet, every nudge stays: nothing has been acted on.
+	const fresh = projectSlots(view, []);
+	assert.deepEqual(
+		fresh.map((slot) => slot.entryId ?? slot.block?.id),
+		["e-u1", "e-n1", "e-a1", "e-n2", "e-u2"],
+	);
 });
 
 /**

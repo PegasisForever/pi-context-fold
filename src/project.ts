@@ -2,15 +2,22 @@ import type { FoldBlock, Msg, Slot, ViewItem } from "./types.ts";
 
 export const TOOL_NAME = "compact";
 
-/** Covered entries out, each block's summary at its first covered entry, retired compact pairs out
- * (§6). Pure: no I/O, no decisions (D2). The retired calls are derived here, not passed in: every
- * caller wants the same ones and a caller that forgot would put a dead 5K menu back in the view. */
+/** The `customType` on every nudge this extension sends (see `nudge.ts`). Defined here so the
+ * projection can recognise nudges without importing the sender (which imports from here). */
+export const NUDGE_CUSTOM_TYPE = "pi-context-fold";
+
+/** Covered entries out, each block's summary at its first covered entry, retired compact pairs out,
+ * pre-fold nudges out (§6, §8). Pure: no I/O, no decisions (D2). The retired calls are derived here,
+ * not passed in: every caller wants the same ones and a caller that forgot would put a dead 5K menu
+ * back in the view. A nudge older than the newest fold existed when that fold landed, so the model
+ * has acted on it and its numbers are stale; the next reminder arrives on growth anyway. */
 export function projectSlots(view: ViewItem[], blocks: FoldBlock[]): Slot[] {
 	const covering = new Map<string, FoldBlock>();
 	for (const block of blocks) {
 		for (const entryId of block.entryIds) covering.set(entryId, block);
 	}
 	const goneCalls = new Set(staleMenuCalls(view));
+	const goneNudges = staleNudgeEntries(view, blocks);
 	for (const block of blocks) {
 		for (const callId of block.dropToolCallIds) goneCalls.add(callId);
 	}
@@ -23,6 +30,8 @@ export function projectSlots(view: ViewItem[], blocks: FoldBlock[]): Slot[] {
 			summarised.add(block.id);
 			out.push({ message: summaryMessage(block), block });
 		}
+		// An answered nudge leaves no slot, but a folded nudge still anchors its summary above.
+		if (goneNudges.has(item.entryId)) continue;
 		const kept = keep(item.message, block !== undefined, goneCalls);
 		if (kept) out.push({ message: kept, entryId: item.entryId });
 	}
@@ -44,6 +53,28 @@ export function staleMenuCalls(view: ViewItem[]): string[] {
 			if (part.type === "toolCall" && part.name === TOOL_NAME && noArguments(part.arguments))
 				served.push(part.id);
 		}
+	}
+	return stale;
+}
+
+/** A1: every nudge older than the newest fold. It existed when that fold landed, so the model has
+ * acted on it. No span mapping and no new record: creation order is enough, and a spontaneous fold
+ * retires the same way. A folded nudge still anchors its summary at its loop above. */
+export function staleNudgeEntries(view: ViewItem[], blocks: FoldBlock[]): Set<string> {
+	let newest = 0;
+	for (const block of blocks) {
+		if (block.timestamp > newest) newest = block.timestamp;
+	}
+	const stale = new Set<string>();
+	if (newest === 0) return stale;
+	for (const item of view) {
+		const message = item.message;
+		if (
+			message.role === "custom" &&
+			message.customType === NUDGE_CUSTOM_TYPE &&
+			message.timestamp < newest
+		)
+			stale.add(item.entryId);
 	}
 	return stale;
 }

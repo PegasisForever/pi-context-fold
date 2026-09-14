@@ -110,8 +110,8 @@ principle to be recorded here. In practice the table above carries the *current*
 and **§17 carries every change with the evidence that forced it** — including changes to
 this document made during the build. §17 is the audit trail; this table is the state.
 
-**Progress** (§16 build order). All five steps are landed. 1,115 source lines, 307 test lines,
-6 tests. What has and has not been verified is §19.
+**Progress** (§16 build order). All five steps are landed. 1,142 source lines, 347 test lines,
+7 tests. What has and has not been verified is §19.
 
 The audit trail is §17; every row there is a change some review forced, with the evidence.
 
@@ -533,6 +533,12 @@ reintroduced, by the very line meant to prevent it (§17.9).
 a fold followed. Otherwise a dead 5K rides every later request for the rest of the session —
 that is the reason, and it is the whole reason.
 
+**A nudge older than the newest fold is removed from the view.** It existed when that fold
+landed, so the model has acted on it and its numbers are stale — rereading it as a fresh order is
+the live failure this answers. No span mapping and no new record: creation order is enough, so a
+spontaneous fold retires the same way. The session log and the TUI keep everything; only what the
+model is sent changes (C6).
+
 There is no benefit floor. The model decides whether a fold is worth making; we only decide
 when to ask.
 
@@ -673,7 +679,7 @@ smaller than the content it replaces, log it. The fold still happens.
 | `menu.ts` | even-count partition, rendering | 178 |
 | `emergency.ts` | `session_before_compact`: `/compact`, and the overflow cut | 116 |
 | `index.ts` | event wiring, tool registration | 97 |
-| `project.ts` | fold projection, block edit, pair removal | 94 |
+| `project.ts` | fold projection, block edit, pair removal, nudge retirement | 121 |
 | `dump.ts` | write the transcripts to the session cache dir | 86 |
 | `nudge.ts` | the nudge text, and the one place it is sent from | 64 |
 | `config.ts` | the one key, out of Pi's settings file | 65 |
@@ -683,7 +689,7 @@ smaller than the content it replaces, log it. The fold still happens.
 | `status.ts` | `setStatus` line | 15 |
 | `view.ts` | build the view from entries | 14 |
 | `log.ts` | one JSON line writer | 13 |
-| **Total** | **1,115**, against a first estimate of ~830. | |
+| **Total** | **1,142**, against a first estimate of ~830. | |
 
 Against ~9,950 lines of source in the original.
 
@@ -691,7 +697,7 @@ Against ~9,950 lines of source in the original.
 
 ## 12. The test suite
 
-**Six tests, 307 lines.** They build their own fixtures and depend on nothing outside the
+**Seven tests, 347 lines.** They build their own fixtures and depend on nothing outside the
 repository: block records read back from the branch and absorbed correctly, the status line,
 the two model-facing strings §4 and §6 read out of `docs/MODEL-FACING-TEXT.md` rather than
 copied, the one token format, and two that drive the real tool through a stub session — one
@@ -963,6 +969,7 @@ fires at a sensible moment.
 | 19.50 | "menu tokens are excluded from the growth measurement" | they are not; the menu result just leaves the view next round | the arithmetic was wrong (20K, not 200K) and Pi's single number has nothing to subtract from |
 | 19.51 | A "hold the summary until no call is pending" condition | complete the closure's transitivity instead | the mid-round case becomes unrepresentable rather than handled — C4 |
 | 19.52 | "excluding compaction entries makes coverage contiguous" | it does not; coverage can split regardless | a span with no compaction entry, contiguous when folded, splits when a newer compaction hoists past an older one |
+| 19.75 | Nudges stay in the view forever | a nudge older than the newest fold leaves the view | live: after a fold the model reread the old reminder as a fresh order; creation order is enough, so no span mapping and no new record (A1) |
 | 19.74 | No config at all (§13, first pass) | one key, `nudgeGrowthTokens`, under our own name in Pi's `settings.json`, read at load | the one number here that was measured once and never since, on a window that changes with the model; and the settings file is where `pi-powerline-footer` already looks, so the user edits one file, not one per extension |
 | 19.73 | `/compact` runs the mechanical cut, like a real overflow | it cancels Pi's compaction and sends the ordinary nudge, with a turn of its own | the key cannot be removed from Pi, and a key you press by habit must not throw half the session out of view with no summary |
 | 19.72 | A span may name any menu we ever issued | only the menu from this assistant message or the one before | the menu result leaves the view one assistant message after it is served, so past that point the model names ids from a list it cannot see |
@@ -986,7 +993,7 @@ fires at a sensible moment.
 | 19.55 | The nudge is appended by the `context` handler each turn | it is a persisted Pi message sent at `turn_end` | appending in the handler is a decision inside a handler D2 requires to be pure; persisting costs ~48 tokens per nudge (~6 per three days) and survives restarts |
 | 19.53 | A fixpoint closure over the call↔result relation | two bounded hops | measured max eccentricity 2 over 6,666 components; and a fixpoint would cascade coverage across unrelated rounds if a call id were ever repeated, where a bounded pass cannot — the general version is the *less* safe one |
 
-Module estimate: **~950 lines**; the tree is 1,115. Down from ~990, ~1,385, ~1,810 in the first draft, and
+Module estimate: **~950 lines**; the tree is 1,142. Down from ~990, ~1,385, ~1,810 in the first draft, and
 ~9,950 in the original.
 
 ---

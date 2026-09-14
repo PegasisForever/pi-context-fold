@@ -1,9 +1,9 @@
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
-import { shortTokens } from "./project.ts";
+import { NUDGE_CUSTOM_TYPE as NAME, shortTokens } from "./project.ts";
 import type { Shown } from "./shown.ts";
 
 /** The tag on every message this extension injects, and the name on every renderer it registers. */
-export const NAME = "pi-context-fold";
+export { NAME };
 
 /**
  * Nudge once the context has grown by this much since the last nudge (§8). The default, and the only

@@ -170,7 +170,7 @@ qualifies for a fold at all is in the nudge instead (§7); see §3c.
 <how-to-choose-the-span>
 Avoid compacting recent turns.
 Compact finished work: exploration that led nowhere, tool output you have already used, a phase whose result is recorded.
-A span can be one entry: from == to.
+To compact one entry, set from and to to the same id.
 </how-to-choose-the-span>
 
 <how-to-summarize>
