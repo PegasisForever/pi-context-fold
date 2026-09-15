@@ -190,13 +190,14 @@ test("A1: a fold retires every nudge older than it, and keeps newer ones", () =>
 });
 
 /**
- * §4b: the receipt is a stored entry, so the log can confirm what the view showed. It serves one
- * round-trip, then leaves the view while the entry stays. The 560d loop folded three times on a
- * live user order with fresh menus because the result is seen once mid-turn and the menu never
- * says stopping is allowed; the receipt carries both the numbers and the stop rule to exactly
- * that choice — and being stored, installed can finally be told apart from sent.
+ * §4b: the receipt is a stored entry, so the log can confirm what the view showed, and it never
+ * leaves the view — only a later fold that covers it can take it out. The 560d loop folded three
+ * times on a live user order with fresh menus because the result is seen once mid-turn and the
+ * menu never says stopping is allowed; the receipt carries both the numbers and the stop rule to
+ * exactly that choice. A note that expires is a note the next choice can be made without, which
+ * is the same failure one step later, so it does not expire.
  */
-test("§4b: the stored receipt serves one round-trip, then leaves the view but not the log", () => {
+test("§4b: the stored receipt stays in the view for every later answer", () => {
 	const user = (text: string, timestamp: number): Msg =>
 		({ role: "user", content: [{ type: "text", text }], timestamp }) as Msg;
 	const assistant = (text: string, timestamp: number): Msg =>
@@ -252,14 +253,17 @@ test("§4b: the stored receipt serves one round-trip, then leaves the view but n
 	assert.deepEqual(names(once), ["summary b1", "e-a1", "e-rcpt", "e-a2"]);
 	assert.ok(note(once) !== undefined);
 
-	// Two answers: the note is gone from the view, the summary stays, the entry stays in the log.
+	// Two answers, and every answer after them: the note is still there. The decision it serves is
+	// every later fold decision, not only the next one, so no count of answers retires it.
 	const twice = [...once, { entryId: "e-a3", message: assistant("folding again", 300) }];
-	assert.deepEqual(names(twice), ["summary b1", "e-a1", "e-a2", "e-a3"]);
-	assert.equal(note(twice), undefined);
-	assert.ok(
-		twice.some((item) => item.entryId === "e-rcpt"),
-		"retired from the view, kept in the log",
-	);
+	assert.deepEqual(names(twice), ["summary b1", "e-a1", "e-rcpt", "e-a2", "e-a3"]);
+	assert.ok(note(twice) !== undefined, "the record of a fold must not expire");
+
+	// Ten answers later it is still the only thing in the view saying the model compacted.
+	const later = [...twice];
+	for (let i = 0; i < 10; i++)
+		later.push({ entryId: `e-late${i}`, message: assistant("more work", 400 + i) });
+	assert.ok(note(later) !== undefined, "the record must outlive the turn that made it");
 });
 
 /**
@@ -448,7 +452,7 @@ test("§2a: a span is refused when the list it names is no longer in the view", 
  * first failure names spans, the stale nudge is gone (A1), the receipt with the stop rule stands
  * behind the summary (§4b), and no tool result is ever left without its call.
  */
-test("560d replay: after a fold the next view carries the stored receipt, no nudge, no orphans", async () => {
+test("560d replay: after a fold every later view carries the stored receipt, no nudge, no orphans", async () => {
 	const { call, appended, entries } = driveCompact();
 	// The standing reminder, sent long before the fold (timestamp predates the fold's).
 	entries.push({
@@ -519,13 +523,14 @@ test("560d replay: after a fold the next view carries the stored receipt, no nud
 	assert.equal(hasNudge(), false, "a pre-fold nudge must not sit beside fresh folds");
 	pairsIntact();
 
-	// Two answers later the note is gone from the view and stays in the log, and the summary stays.
+	// Two answers later, which is where the 560d loop asked for its third menu: the note is still
+	// there, next to the summary it belongs to, and no pair has been broken to keep it.
 	assistant("later", Date.now() + 20_000);
-	assert.equal(receipt(), undefined);
-	assert.ok(receiptEntry() !== undefined, "retired from the view, kept in the log");
+	assert.match(receipt() ?? "", /Only compact again/);
+	assert.ok(receiptEntry() !== undefined, "in the view and in the log");
 	assert.ok(
 		projectSlots(buildView(entries), appended).some((slot) => slot.block?.id === "b1"),
-		"the summary outlives its receipt",
+		"the summary stands beside its receipt",
 	);
 	pairsIntact();
 });

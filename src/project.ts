@@ -4,8 +4,9 @@ export const TOOL_NAME = "compact";
 
 /** The `customType` on the receipt each landed fold sends (see `fold.ts`). Stored, like nudges
  * and menus — never derived: a note that exists only in the projection cannot be told apart from
- * a note that was never sent, and the log cannot confirm it. Separate from the nudge type so each
- * ages by its own rule. */
+ * a note that was never sent, and the log cannot confirm it. Separate from the nudge type because
+ * a nudge is retired by the next fold and a receipt is retired by nothing: it is the only record
+ * that the model compacted, and it stays in the view until a later fold covers it (§4b). */
 export const RECEIPT_CUSTOM_TYPE = "pi-context-fold-receipt";
 
 /** The `customType` on every nudge this extension sends (see `nudge.ts`). Defined here so the
@@ -13,11 +14,12 @@ export const RECEIPT_CUSTOM_TYPE = "pi-context-fold-receipt";
 export const NUDGE_CUSTOM_TYPE = "pi-context-fold";
 
 /** Covered entries out, each block's summary at its first covered entry, retired compact pairs out,
- * pre-fold nudges out, answered receipts out (§6, §8). Pure: no I/O, no decisions (D2). The retired
- * calls are derived here, not passed in: every caller wants the same ones and a caller that forgot
- * would put a dead 5K menu back in the view. A nudge older than the newest fold existed when that
- * fold landed, so the model has acted on it and its numbers are stale; the next reminder arrives
- * on growth anyway. */
+ * pre-fold nudges out (§6, §8). Pure: no I/O, no decisions (D2). The retired calls are derived
+ * here, not passed in: every caller wants the same ones and a caller that forgot would put a dead
+ * 5K menu back in the view. A nudge older than the newest fold existed when that fold landed, so
+ * the model has acted on it and its numbers are stale; the next reminder arrives on growth anyway.
+ * Receipts are not in that list: they are the record of what the model did, and a record that
+ * expires is a record the model can be asked to act without (§4b). */
 export function projectSlots(view: ViewItem[], blocks: FoldBlock[]): Slot[] {
 	const covering = new Map<string, FoldBlock>();
 	for (const block of blocks) {
@@ -25,7 +27,6 @@ export function projectSlots(view: ViewItem[], blocks: FoldBlock[]): Slot[] {
 	}
 	const goneCalls = new Set(staleMenuCalls(view));
 	const goneNudges = staleNudgeEntries(view, blocks);
-	const goneReceipts = staleReceiptEntries(view);
 	for (const block of blocks) {
 		for (const callId of block.dropToolCallIds) goneCalls.add(callId);
 	}
@@ -38,9 +39,7 @@ export function projectSlots(view: ViewItem[], blocks: FoldBlock[]): Slot[] {
 			summarised.add(block.id);
 			out.push({ message: summaryMessage(block), block });
 		}
-		// An answered receipt leaves no slot either, by the same shape of rule as a nudge: it served
-		// the deciding turn and its menu round-trip (§4b). The entry stays in the log either way.
-		if (goneNudges.has(item.entryId) || goneReceipts.has(item.entryId)) continue;
+		if (goneNudges.has(item.entryId)) continue;
 		const kept = keep(item.message, block !== undefined, goneCalls);
 		if (kept) out.push({ message: kept, entryId: item.entryId });
 	}
@@ -88,41 +87,12 @@ export function staleNudgeEntries(view: ViewItem[], blocks: FoldBlock[]): Set<st
 	return stale;
 }
 
-/** Assistants in the view newer than a timestamp. The clock every ephemeral note ages by: the menu
- * is fresh for the current assistant message or the one before it, and the fold receipt below
- * survives one menu round-trip the same way. Counts view assistants, never projected ones. */
-export function assistantsNewerThan(view: ViewItem[], timestamp: number): number {
-	let n = 0;
-	for (const item of view) {
-		const message = item.message;
-		if (message.role === "assistant" && message.timestamp > timestamp) n++;
-	}
-	return n;
-}
-
-/** MODEL-FACING-TEXT.md §4b. Receipts the fold sent, answered past a menu round-trip. Two newer
- * assistants means the model has answered through the deciding turn and its menu round-trip, so the
- * note is gone by the second fold decision at the latest — while the entry stays in the log. Ages
- * by answers, never by folds: the newest fold's note must survive the fold that made it. */
-export function staleReceiptEntries(view: ViewItem[]): Set<string> {
-	const stale = new Set<string>();
-	for (const item of view) {
-		const message = item.message;
-		if (
-			message.role === "custom" &&
-			message.customType === RECEIPT_CUSTOM_TYPE &&
-			assistantsNewerThan(view, message.timestamp) >= 2
-		)
-			stale.add(item.entryId);
-	}
-	return stale;
-}
-
 /** The numbers are the receipt; the last sentence is the stop rule. It lives here and not in the
  * menu because the choice it serves exists only on post-fold turns: first folds answer the nudge
  * or the user's order, which already cover whether. No span ids: the menu that issued them is
  * already stale or going, and reissued ids would point at new text. The id names the block whose
- * summary the note follows (its transcript path carries the same id). */
+ * summary the note follows (its transcript path carries the same id). One line per landed block,
+ * and every line stays: read in order they are the ledger of what this session has compacted. */
 export function receiptText(block: FoldBlock): string {
 	return (
 		`Compacted ${block.msgs} messages into ${block.id}. ` +

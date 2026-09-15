@@ -408,15 +408,19 @@ After a **successful** fold:
   69% of this user's assistant messages carry signed thinking; signatures are per-block and
   never chained, so removing them is safe.
 - **Also remove the menu call and its ~5K result**, same rules.
-- **Send a one-round receipt per landed block** (MODEL-FACING-TEXT.md §4b). The fold's own result
+- **Send a standing receipt per landed block** (MODEL-FACING-TEXT.md §4b). The fold's own result
   is seen once mid-turn and leaves with its call, so without this the next choice happens with no
   record of what just landed — the live 560d loop folded three times on a standing user order with
   fresh menus (187, 65, 20 entries) because nothing said what was done or when to stop. A stored
-  entry, retired from the view after one round-trip: an entry in the log and the TUI, so installed
-  can be told apart from sent. The derived form was tried first and reversed within the hour: a
-  note that exists only in the projection cannot be told apart from a note that was never sent,
-  and the first live session proved it. Carries the numbers and the stop rule; no span ids, which
-  would rot with the menu that issued them. Partial reversal of 19.27 on live evidence.
+  entry: an entry in the log and the TUI, so installed can be told apart from sent. The derived
+  form was tried first and reversed within the hour: a note that exists only in the projection
+  cannot be told apart from a note that was never sent, and the first live session proved it.
+  **Nothing retires it.** An expiry was tried and reversed too: at two newer assistant messages the
+  note left the view, so any turn that did a little work reached its next fold decision with no
+  record again — the same failure one step later, for 40 tokens saved. Only a later fold that
+  covers the entry takes it out, into that fold's transcript like any other message. Carries the
+  numbers and the stop rule; no span ids, which would rot with the menu that issued them. Partial
+  reversal of 19.27 on live evidence.
 - The summary message is wrapped in `<summary full-transcript="…/b5.txt">`. That follows Pi's
   own convention for system-authored context — it wraps its compaction and branch summaries
   the same way (`messages.js:7-17`) — so the model needs no sentence explaining that the text
@@ -688,7 +692,7 @@ smaller than the content it replaces, log it. The fold still happens.
 | `menu.ts` | even-count partition, rendering | 178 |
 | `emergency.ts` | `session_before_compact`: `/compact`, and the overflow cut | 116 |
 | `index.ts` | event wiring, tool registration | 122 |
-| `project.ts` | fold projection, block edit, pair removal, nudge and receipt retirement | 177 |
+| `project.ts` | fold projection, block edit, pair removal, nudge retirement | 177 |
 | `dump.ts` | write the transcripts to the session cache dir | 86 |
 | `nudge.ts` | the nudge text, and the one place it is sent from | 64 |
 | `config.ts` | the one key, out of Pi's settings file | 65 |
@@ -978,6 +982,7 @@ fires at a sensible moment.
 | 19.50 | "menu tokens are excluded from the growth measurement" | they are not; the menu result just leaves the view next round | the arithmetic was wrong (20K, not 200K) and Pi's single number has nothing to subtract from |
 | 19.51 | A "hold the summary until no call is pending" condition | complete the closure's transitivity instead | the mid-round case becomes unrepresentable rather than handled — C4 |
 | 19.52 | "excluding compaction entries makes coverage contiguous" | it does not; coverage can split regardless | a span with no compaction entry, contiguous when folded, splits when a newer compaction hoists past an older one |
+| 19.78 | The receipt leaves the view after one round-trip (two newer assistants) | it stays until a later fold covers it | the note is the only record that the model compacted, and an expiring record just moves the 560d loop one turn later — any post-fold turn with two model calls in it reaches the next decision empty-handed again; 40 tokens per block is not a reason |
 | 19.77 | Receipt derived in the projection (§4b as first built) | stored receipt entry, retired from the view after one round-trip, plus a load-commit log line | live: the first session with the derived note showed no telling message, and projection-only cannot be told apart from never-sent — and installed-latest never implies running-latest, which the load line now says aloud |
 | 19.76 | No post-fold note (19.27); result seen once mid-turn | derived one-round receipt (§4b) with numbers and stop rule, no span ids | live 560d loop: three folds on a standing order with fresh menus, result-once was not enough; ephemeral and unpaired, so 19.27's reason stands |
 | 19.75 | Nudges stay in the view forever | a nudge older than the newest fold leaves the view | live: after a fold the model reread the old reminder as a fresh order; creation order is enough, so no span mapping and no new record (A1) |

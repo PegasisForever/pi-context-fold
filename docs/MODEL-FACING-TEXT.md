@@ -302,14 +302,15 @@ block ledger drifts from the session."*
 
 ---
 
-## 4b. Fold receipt — the one-round note
+## 4b. Fold receipt — the standing record
 
 A fold's own result is seen once mid-turn and then leaves with its call, so the next choice
-would happen with no record of what just landed. The receipt keeps the numbers in view until the
-model has answered past a menu round-trip (fewer than two newer assistants). The fold sends it as
-a stored entry, retired from the view like a menu pair: an entry in the log and the TUI, so
-installed can be told apart from sent and the log confirms what the view showed. A note that
-exists only in the projection cannot be told apart from a note that was never sent.
+would happen with no record of what just landed. The receipt keeps the numbers in view, and
+nothing retires it: it is the only thing in the context that says the model compacted, so it
+stays until a later fold covers the entry and carries it into that fold's transcript. The fold
+sends it as a stored entry: an entry in the log and the TUI, so installed can be told apart from
+sent and the log confirms what the view showed. A note that exists only in the projection cannot
+be told apart from a note that was never sent.
 
 No span ids: the menu that issued them is already stale or going, and reissued ids would point at
 new text. The id names the block whose summary stands directly above the note (its transcript
@@ -322,7 +323,7 @@ Compacted 38 messages into b5. 412K → 3.1K. Only compact again if large finish
 </pi-context-fold>
 ```
 
-**≈ 40 tokens in the view for one round-trip; permanent in the log.**
+**≈ 40 tokens per landed block, held for the rest of the session; permanent in the log.**
 
 ---
 
