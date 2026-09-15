@@ -1,3 +1,6 @@
+import { execFileSync } from "node:child_process";
+import { dirname } from "node:path";
+import { fileURLToPath } from "node:url";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { type Config, readConfig } from "./config.ts";
 import { blocksDir } from "./dump.ts";
@@ -5,7 +8,7 @@ import { registerEmergency } from "./emergency.ts";
 import { type FoldState, registerFold } from "./fold.ts";
 import { log } from "./log.ts";
 import { NAME, sendNudge } from "./nudge.ts";
-import { projectSlots } from "./project.ts";
+import { projectSlots, RECEIPT_CUSTOM_TYPE } from "./project.ts";
 import { labelled, type Shown } from "./shown.ts";
 import { liveBlocks } from "./state.ts";
 import { setFoldStatus } from "./status.ts";
@@ -17,6 +20,19 @@ export default function contextFold(pi: ExtensionAPI): void {
 	// here drops the whole extension with a message, where a throw in a handler is swallowed (§13).
 	const config = readConfig(process.cwd());
 	const state: FoldState = { menu: undefined, menuAt: 0, folded: false, baseline: 0, reported: new Set() };
+	// Fail loud about which code runs: a running session keeps the code from its own start, so
+	// installed-latest never implies running-latest. Without this line the two cannot be told apart.
+	try {
+		const commit = execFileSync("git", ["rev-parse", "--short", "HEAD"], {
+			cwd: dirname(fileURLToPath(import.meta.url)),
+			stdio: ["ignore", "pipe", "ignore"],
+		})
+			.toString()
+			.trim();
+		if (commit !== "") log("load", { commit });
+	} catch {
+		// Not a git checkout — nothing to report.
+	}
 
 	pi.on("context", (_event, ctx) => ({
 		messages: projectSlots(
@@ -36,6 +52,10 @@ export default function contextFold(pi: ExtensionAPI): void {
 	registerEmergency(pi, config);
 
 	pi.registerMessageRenderer<Shown>(NAME, (message, _options, theme) =>
+		labelled(theme, NAME, message.details?.lines ?? []),
+	);
+	// The receipt wears the same label: same extension, same family of notes.
+	pi.registerMessageRenderer<Shown>(RECEIPT_CUSTOM_TYPE, (message, _options, theme) =>
 		labelled(theme, NAME, message.details?.lines ?? []),
 	);
 

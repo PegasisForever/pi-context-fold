@@ -158,7 +158,7 @@ add"*.
 
 ## Size
 
-**1192 lines of source, 8 tests.** One tool, one config key, no slash command.
+**1232 lines of source, 9 tests.** One tool, one config key, no slash command.
 
 The extension it replaces is ~9,950 lines. Roughly 250 mutations were run against this tree
 across seven review rounds; §17 records what each one changed.

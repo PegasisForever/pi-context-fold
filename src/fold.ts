@@ -3,7 +3,15 @@ import { type Static, Type } from "typebox";
 import { originalPath, writeOriginal } from "./dump.ts";
 import { log } from "./log.ts";
 import { buildMenu, type Menu, type MenuEntry } from "./menu.ts";
-import { noArguments, projectSlots, shortTokens, TOOL_NAME } from "./project.ts";
+import {
+	NUDGE_CUSTOM_TYPE,
+	noArguments,
+	projectSlots,
+	RECEIPT_CUSTOM_TYPE,
+	receiptText,
+	shortTokens,
+	TOOL_NAME,
+} from "./project.ts";
 import { header, type Shown, shown } from "./shown.ts";
 import { liveBlocks } from "./state.ts";
 import type { FoldBlock, Msg, Slot, ViewItem } from "./types.ts";
@@ -106,6 +114,20 @@ export function registerFold(pi: ExtensionAPI, state: FoldState): void {
 			applyAll(pi, planned);
 			state.menu = undefined;
 			state.folded = true;
+			// One stored note per landed block (§4b): an entry in the log and the TUI like every
+			// other extension message, retired from the view after one round-trip. Only fully
+			// applied folds get one — applyAll throws before this on a partial failure.
+			for (const { record } of planned) {
+				pi.sendMessage<Shown>(
+					{
+						customType: RECEIPT_CUSTOM_TYPE,
+						content: `<${NUDGE_CUSTOM_TYPE}>\n${receiptText(record)}\n</${NUDGE_CUSTOM_TYPE}>`,
+						details: { lines: [receiptText(record)] },
+						display: true,
+					},
+					{ deliverAs: "followUp", triggerTurn: false },
+				);
+			}
 			return {
 				content: [
 					{ type: "text", text: planned.map((one) => resultLine(one.record, one.fold)).join("\n") },

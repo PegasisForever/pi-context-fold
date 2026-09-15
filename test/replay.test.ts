@@ -5,7 +5,14 @@ import { join } from "node:path";
 import { test } from "node:test";
 import type { SessionEntry } from "@earendil-works/pi-coding-agent";
 import { registerFold, resultLine } from "../src/fold.ts";
-import { NUDGE_CUSTOM_TYPE, projectSlots, shortTokens, summaryMessage } from "../src/project.ts";
+import {
+	NUDGE_CUSTOM_TYPE,
+	projectSlots,
+	RECEIPT_CUSTOM_TYPE,
+	receiptText,
+	shortTokens,
+	summaryMessage,
+} from "../src/project.ts";
 import { liveBlocks } from "../src/state.ts";
 import { setFoldStatus } from "../src/status.ts";
 import type { FoldBlock, Msg } from "../src/types.ts";
@@ -169,10 +176,10 @@ test("A1: a fold retires every nudge older than it, and keeps newer ones", () =>
 	const folded = block({ id: "b1", entryIds: ["e-u1"], timestamp: 200 });
 
 	const slots = projectSlots(view, [folded]);
-	const kept = slots.map((slot) => slot.entryId ?? slot.block?.id ?? "receipt");
-	// The summary anchors at the folded entry, the receipt stands behind it (b1 is newer than
-	// every assistant here), the pre-fold nudge is gone, the post-fold one stays.
-	assert.deepEqual(kept, ["b1", "receipt", "e-a1", "e-n2", "e-u2"]);
+	const kept = slots.map((slot) => slot.entryId ?? slot.block?.id);
+	// The summary anchors at the folded entry, the pre-fold nudge is gone, the post-fold one stays.
+	// (No receipt entry exists in this view, so none can show.)
+	assert.deepEqual(kept, ["b1", "e-a1", "e-n2", "e-u2"]);
 
 	// With no fold yet, every nudge stays: nothing has been acted on.
 	const fresh = projectSlots(view, []);
@@ -183,13 +190,13 @@ test("A1: a fold retires every nudge older than it, and keeps newer ones", () =>
 });
 
 /**
- * §4b: the receipt keeps the fold's numbers in view until the model has answered past a menu
- * round-trip, then goes. Derived from the record — never stored, never paired. The 560d loop
- * folded three times on a live user order with fresh menus because the result is seen once
- * mid-turn and the menu never says stopping is allowed; the receipt carries both the numbers
- * and the stop rule to exactly that choice.
+ * §4b: the receipt is a stored entry, so the log can confirm what the view showed. It serves one
+ * round-trip, then leaves the view while the entry stays. The 560d loop folded three times on a
+ * live user order with fresh menus because the result is seen once mid-turn and the menu never
+ * says stopping is allowed; the receipt carries both the numbers and the stop rule to exactly
+ * that choice — and being stored, installed can finally be told apart from sent.
  */
-test("§4b: the fold receipt stands behind a fresh summary and leaves after two answers", () => {
+test("§4b: the stored receipt serves one round-trip, then leaves the view but not the log", () => {
 	const user = (text: string, timestamp: number): Msg =>
 		({ role: "user", content: [{ type: "text", text }], timestamp }) as Msg;
 	const assistant = (text: string, timestamp: number): Msg =>
@@ -202,48 +209,57 @@ test("§4b: the fold receipt stands behind a fresh summary and leaves after two 
 		tokensAfter: 3_100,
 		timestamp: 200,
 	});
-	const texts = (view: { entryId: string; message: Msg }[]): string[] =>
-		projectSlots(view, [folded]).map((slot) => {
-			if (slot.block !== undefined) return `summary ${slot.block.id}`;
-			if (slot.entryId !== undefined) return slot.entryId;
-			assert.equal(slot.message.role, "user", "a receipt is a plain user note, never a tool result");
-			if (slot.message.role !== "user") throw new Error("unreachable");
-			const content = slot.message.content;
-			return typeof content === "string"
-				? content
-				: content.map((p) => (p.type === "text" ? p.text : "")).join("");
-		});
-
-	// No answer yet: summary plus receipt with the numbers and the stop rule, no span ids.
-	const fresh = texts([
+	// The entry the fold sends, standing where sent entries stand: at the end.
+	const receipt = {
+		entryId: "e-rcpt",
+		message: {
+			role: "custom",
+			customType: RECEIPT_CUSTOM_TYPE,
+			content: `<pi-context-fold>\n${receiptText(folded)}\n</pi-context-fold>`,
+			display: true,
+			timestamp: 210,
+		} as Msg,
+	};
+	const names = (view: { entryId: string; message: Msg }[]): string[] =>
+		projectSlots(view, [folded]).map((slot) => slot.entryId ?? `summary ${slot.block?.id}`);
+	const note = (view: { entryId: string; message: Msg }[]): string | undefined => {
+		for (const slot of projectSlots(view, [folded])) {
+			if (slot.entryId === "e-rcpt") {
+				assert.equal(slot.message.role, "custom");
+				if (slot.message.role !== "custom") throw new Error("unreachable");
+				const content = slot.message.content;
+				return typeof content === "string" ? content : "";
+			}
+		}
+		return undefined;
+	};
+	const base = [
 		{ entryId: "e-u1", message: user("old work", 10) },
 		{ entryId: "e-a1", message: assistant("folding", 150) },
-	]);
-	assert.equal(fresh.length, 3);
-	assert.equal(fresh[0], "summary b1");
+		receipt,
+	];
+
+	// No answer yet: summary, work, and the note with the numbers and the stop rule, no span ids.
+	assert.deepEqual(names(base), ["summary b1", "e-a1", "e-rcpt"]);
 	assert.match(
-		fresh[1] ?? "",
+		note(base) ?? "",
 		/<pi-context-fold>[\s\S]*Compacted 5 messages into b1\. 412K → 3\.1K\.[\s\S]*Only compact again[\s\S]*<\/pi-context-fold>/,
 	);
-	assert.ok(!(fresh[1] ?? "").includes("e-u1"), "a receipt must not quote dead menu ids");
-	assert.equal(fresh[2], "e-a1");
+	assert.ok(!(note(base) ?? "").includes("e-u1"), "a receipt must not quote dead menu ids");
 
-	// One answer (a menu round-trip): the receipt is still there for the fold decision.
-	const once = texts([
-		{ entryId: "e-u1", message: user("old work", 10) },
-		{ entryId: "e-a1", message: assistant("folding", 150) },
-		{ entryId: "e-a2", message: assistant("menu?", 250) },
-	]);
-	assert.equal(once.length, 4);
+	// One answer (a menu round-trip): the note is still there for the fold decision.
+	const once = [...base, { entryId: "e-a2", message: assistant("menu?", 250) }];
+	assert.deepEqual(names(once), ["summary b1", "e-a1", "e-rcpt", "e-a2"]);
+	assert.ok(note(once) !== undefined);
 
-	// Two answers: the note is gone, the summary stays.
-	const twice = texts([
-		{ entryId: "e-u1", message: user("old work", 10) },
-		{ entryId: "e-a1", message: assistant("folding", 150) },
-		{ entryId: "e-a2", message: assistant("menu?", 250) },
-		{ entryId: "e-a3", message: assistant("folding again", 300) },
-	]);
-	assert.deepEqual(twice, ["summary b1", "e-a1", "e-a2", "e-a3"]);
+	// Two answers: the note is gone from the view, the summary stays, the entry stays in the log.
+	const twice = [...once, { entryId: "e-a3", message: assistant("folding again", 300) }];
+	assert.deepEqual(names(twice), ["summary b1", "e-a1", "e-a2", "e-a3"]);
+	assert.equal(note(twice), undefined);
+	assert.ok(
+		twice.some((item) => item.entryId === "e-rcpt"),
+		"retired from the view, kept in the log",
+	);
 });
 
 /**
@@ -341,6 +357,19 @@ function driveCompact() {
 		appendEntry: (_type: string, data: FoldBlock) => {
 			appended.push(data);
 		},
+		// The fold's receipt lands here, exactly as `sendMessage` lands it in a live session:
+		// a stored entry, observable in the log whether or not the view still shows it.
+		sendMessage: (message: { customType: string; content: string }) => {
+			entries.push({
+				type: "custom_message",
+				id: `rcpt-${entries.length}`,
+				parentId: null,
+				timestamp: new Date().toISOString(),
+				customType: message.customType,
+				content: message.content,
+				display: true,
+			} as unknown as SessionEntry);
+		},
 	};
 	const state = { menu: undefined, menuAt: 0, folded: false, baseline: 0, reported: new Set<string>() };
 	registerFold(pi as never, state);
@@ -419,7 +448,7 @@ test("§2a: a span is refused when the list it names is no longer in the view", 
  * first failure names spans, the stale nudge is gone (A1), the receipt with the stop rule stands
  * behind the summary (§4b), and no tool result is ever left without its call.
  */
-test("560d replay: after a fold the next view carries the receipt, no nudge, no orphans", async () => {
+test("560d replay: after a fold the next view carries the stored receipt, no nudge, no orphans", async () => {
 	const { call, appended, entries } = driveCompact();
 	// The standing reminder, sent long before the fold (timestamp predates the fold's).
 	entries.push({
@@ -464,33 +493,36 @@ test("560d replay: after a fold the next view carries the receipt, no nudge, no 
 	};
 	const receipt = (): string | undefined => {
 		for (const slot of projectSlots(buildView(entries), appended)) {
-			if (slot.block === undefined && slot.entryId === undefined) {
-				assert.equal(slot.message.role, "user");
-				if (slot.message.role !== "user") throw new Error("unreachable");
-				const content = slot.message.content;
-				return typeof content === "string"
-					? content
-					: content.map((p) => (p.type === "text" ? p.text : "")).join("");
+			const message = slot.message;
+			if (message.role === "custom" && message.customType === RECEIPT_CUSTOM_TYPE) {
+				const content = message.content;
+				return typeof content === "string" ? content : "";
 			}
 		}
 		return undefined;
 	};
+	const receiptEntry = (): SessionEntry | undefined =>
+		entries.find((e) => e.type === "custom_message" && e.customType === RECEIPT_CUSTOM_TYPE);
 	const hasNudge = (): boolean =>
 		projectSlots(buildView(entries), appended).some(
 			(slot) => slot.message.role === "custom" && slot.message.customType === NUDGE_CUSTOM_TYPE,
 		);
 
-	// The next decision (one menu round-trip later): summary, receipt with the stop rule, no nudge.
-	assistant("after-fold", 150);
+	// The next decision (one menu round-trip later): summary, stored receipt with the stop rule,
+	// no nudge. The receipt is sent by the tool itself, so the log holds it either way.
+	assistant("after-fold", Date.now() + 10_000);
+	const logged = receiptEntry();
+	assert.ok(logged !== undefined, "the fold must send a receipt entry, not just derive one");
 	const note = receipt();
 	assert.match(note ?? "", /Compacted \d+ messages into b1\./);
 	assert.match(note ?? "", /Only compact again/);
 	assert.equal(hasNudge(), false, "a pre-fold nudge must not sit beside fresh folds");
 	pairsIntact();
 
-	// Two answers later the note is gone and the summary stays.
-	assistant("later", 250);
+	// Two answers later the note is gone from the view and stays in the log, and the summary stays.
+	assistant("later", Date.now() + 20_000);
 	assert.equal(receipt(), undefined);
+	assert.ok(receiptEntry() !== undefined, "retired from the view, kept in the log");
 	assert.ok(
 		projectSlots(buildView(entries), appended).some((slot) => slot.block?.id === "b1"),
 		"the summary outlives its receipt",
