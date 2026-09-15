@@ -298,7 +298,30 @@ Carries the block id, the real span, and the path. Their issue #376 is exactly t
 missing: *"the compress result lacks new block ids and actual ref spans, so the model's
 block ledger drifts from the session."*
 
-**≈ 50 tokens.**
+**≈ 50 tokens.** Seen once mid-turn; the call and its result leave the view at once (§6).
+
+---
+
+## 4b. Fold receipt — the one-round note
+
+A fold's own result is seen once mid-turn and then leaves with its call, so the next choice
+would happen with no record of what just landed. The receipt keeps the numbers in view until the
+model has answered past a menu round-trip (fewer than two newer assistants), standing directly
+behind its summary. Derived from the record at send time — never stored, never paired with a
+call, so no orphan risk and nothing to absorb.
+
+No span ids: the menu that issued them is already stale or going, and reissued ids would point at
+new text. The id names the block whose summary stands directly above the note (its transcript
+path carries the same id). The last sentence is the stop rule, and it lives here and not in the
+menu because the choice it serves exists only on post-fold turns.
+
+```
+<pi-context-fold>
+Compacted 38 messages into b5. 412K → 3.1K. Only compact again if large finished work is left; otherwise carry on with the user's work.
+</pi-context-fold>
+```
+
+**≈ 40 tokens, for one round-trip only.**
 
 ---
 

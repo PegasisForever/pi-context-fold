@@ -9,6 +9,7 @@ import { NUDGE_CUSTOM_TYPE, projectSlots, shortTokens, summaryMessage } from "..
 import { liveBlocks } from "../src/state.ts";
 import { setFoldStatus } from "../src/status.ts";
 import type { FoldBlock, Msg } from "../src/types.ts";
+import { buildView } from "../src/view.ts";
 
 process.env.HOME = mkdtempSync(join(tmpdir(), "context-fold-home-"));
 // Pi makes this directory; the tests drive the extension without Pi, and the fold log is written
@@ -168,9 +169,10 @@ test("A1: a fold retires every nudge older than it, and keeps newer ones", () =>
 	const folded = block({ id: "b1", entryIds: ["e-u1"], timestamp: 200 });
 
 	const slots = projectSlots(view, [folded]);
-	const kept = slots.map((slot) => slot.entryId ?? slot.block?.id);
-	// The summary anchors at the folded entry, the pre-fold nudge is gone, the post-fold one stays.
-	assert.deepEqual(kept, ["b1", "e-a1", "e-n2", "e-u2"]);
+	const kept = slots.map((slot) => slot.entryId ?? slot.block?.id ?? "receipt");
+	// The summary anchors at the folded entry, the receipt stands behind it (b1 is newer than
+	// every assistant here), the pre-fold nudge is gone, the post-fold one stays.
+	assert.deepEqual(kept, ["b1", "receipt", "e-a1", "e-n2", "e-u2"]);
 
 	// With no fold yet, every nudge stays: nothing has been acted on.
 	const fresh = projectSlots(view, []);
@@ -178,6 +180,70 @@ test("A1: a fold retires every nudge older than it, and keeps newer ones", () =>
 		fresh.map((slot) => slot.entryId ?? slot.block?.id),
 		["e-u1", "e-n1", "e-a1", "e-n2", "e-u2"],
 	);
+});
+
+/**
+ * §4b: the receipt keeps the fold's numbers in view until the model has answered past a menu
+ * round-trip, then goes. Derived from the record — never stored, never paired. The 560d loop
+ * folded three times on a live user order with fresh menus because the result is seen once
+ * mid-turn and the menu never says stopping is allowed; the receipt carries both the numbers
+ * and the stop rule to exactly that choice.
+ */
+test("§4b: the fold receipt stands behind a fresh summary and leaves after two answers", () => {
+	const user = (text: string, timestamp: number): Msg =>
+		({ role: "user", content: [{ type: "text", text }], timestamp }) as Msg;
+	const assistant = (text: string, timestamp: number): Msg =>
+		({ role: "assistant", content: [{ type: "text", text }], timestamp }) as Msg;
+	const folded = block({
+		id: "b1",
+		entryIds: ["e-u1"],
+		msgs: 5,
+		tokensBefore: 412_000,
+		tokensAfter: 3_100,
+		timestamp: 200,
+	});
+	const texts = (view: { entryId: string; message: Msg }[]): string[] =>
+		projectSlots(view, [folded]).map((slot) => {
+			if (slot.block !== undefined) return `summary ${slot.block.id}`;
+			if (slot.entryId !== undefined) return slot.entryId;
+			assert.equal(slot.message.role, "user", "a receipt is a plain user note, never a tool result");
+			if (slot.message.role !== "user") throw new Error("unreachable");
+			const content = slot.message.content;
+			return typeof content === "string"
+				? content
+				: content.map((p) => (p.type === "text" ? p.text : "")).join("");
+		});
+
+	// No answer yet: summary plus receipt with the numbers and the stop rule, no span ids.
+	const fresh = texts([
+		{ entryId: "e-u1", message: user("old work", 10) },
+		{ entryId: "e-a1", message: assistant("folding", 150) },
+	]);
+	assert.equal(fresh.length, 3);
+	assert.equal(fresh[0], "summary b1");
+	assert.match(
+		fresh[1] ?? "",
+		/<pi-context-fold>[\s\S]*Compacted 5 messages into b1\. 412K → 3\.1K\.[\s\S]*Only compact again[\s\S]*<\/pi-context-fold>/,
+	);
+	assert.ok(!(fresh[1] ?? "").includes("e-u1"), "a receipt must not quote dead menu ids");
+	assert.equal(fresh[2], "e-a1");
+
+	// One answer (a menu round-trip): the receipt is still there for the fold decision.
+	const once = texts([
+		{ entryId: "e-u1", message: user("old work", 10) },
+		{ entryId: "e-a1", message: assistant("folding", 150) },
+		{ entryId: "e-a2", message: assistant("menu?", 250) },
+	]);
+	assert.equal(once.length, 4);
+
+	// Two answers: the note is gone, the summary stays.
+	const twice = texts([
+		{ entryId: "e-u1", message: user("old work", 10) },
+		{ entryId: "e-a1", message: assistant("folding", 150) },
+		{ entryId: "e-a2", message: assistant("menu?", 250) },
+		{ entryId: "e-a3", message: assistant("folding again", 300) },
+	]);
+	assert.deepEqual(twice, ["summary b1", "e-a1", "e-a2", "e-a3"]);
 });
 
 /**
@@ -344,4 +410,90 @@ test("§2a: a span is refused when the list it names is no longer in the view", 
 		} as unknown as SessionEntry);
 	}
 	await assert.rejects(call({ spans: [{ from: "e1", to: "e2", summary: "x" }] }), /not the current one/);
+});
+
+/**
+ * The 560d loop: told to compact, the model folded three times on fresh menus (187, 65, 20
+ * entries) because the result is seen once mid-turn and nothing said when to stop. Replays one
+ * fold through the real tool and reads the next decision's view back: the example that caused the
+ * first failure names spans, the stale nudge is gone (A1), the receipt with the stop rule stands
+ * behind the summary (§4b), and no tool result is ever left without its call.
+ */
+test("560d replay: after a fold the next view carries the receipt, no nudge, no orphans", async () => {
+	const { call, appended, entries } = driveCompact();
+	// The standing reminder, sent long before the fold (timestamp predates the fold's).
+	entries.push({
+		type: "custom_message",
+		id: "nudge-old",
+		parentId: null,
+		timestamp: "1970-01-01T00:00:00.050Z",
+		customType: NUDGE_CUSTOM_TYPE,
+		content: "<pi-context-fold>200K of 872K context used.</pi-context-fold>",
+		display: true,
+	} as unknown as SessionEntry);
+
+	const menu = await call({});
+	assert.ok(
+		menu.content[0]?.text.includes('compact({spans: [{from: "e1"'),
+		"the menu example must name spans, or the model omits the wrapper again",
+	);
+
+	await call({ spans: [{ from: "e1", to: "e2", summary: "earlier work" }] });
+	assert.equal(appended.length, 1);
+	// Pin the fold between the old nudge and the next answers, whatever the wall clock says.
+	appended[0]!.timestamp = 100;
+
+	const assistant = (id: string, timestamp: number) =>
+		entries.push({
+			type: "message",
+			id,
+			parentId: null,
+			timestamp: "2026-09-12T00:00:00.000Z",
+			message: { role: "assistant", timestamp, content: [{ type: "text", text: "next" }] },
+		} as unknown as SessionEntry);
+	const pairsIntact = (): void => {
+		const calls = new Set<string>();
+		for (const slot of projectSlots(buildView(entries), appended)) {
+			const message = slot.message;
+			if (message.role === "assistant") {
+				for (const part of message.content) if (part.type === "toolCall") calls.add(part.id);
+			} else if (message.role === "toolResult") {
+				assert.ok(calls.has(message.toolCallId), `orphan result for ${message.toolCallId}`);
+			}
+		}
+	};
+	const receipt = (): string | undefined => {
+		for (const slot of projectSlots(buildView(entries), appended)) {
+			if (slot.block === undefined && slot.entryId === undefined) {
+				assert.equal(slot.message.role, "user");
+				if (slot.message.role !== "user") throw new Error("unreachable");
+				const content = slot.message.content;
+				return typeof content === "string"
+					? content
+					: content.map((p) => (p.type === "text" ? p.text : "")).join("");
+			}
+		}
+		return undefined;
+	};
+	const hasNudge = (): boolean =>
+		projectSlots(buildView(entries), appended).some(
+			(slot) => slot.message.role === "custom" && slot.message.customType === NUDGE_CUSTOM_TYPE,
+		);
+
+	// The next decision (one menu round-trip later): summary, receipt with the stop rule, no nudge.
+	assistant("after-fold", 150);
+	const note = receipt();
+	assert.match(note ?? "", /Compacted \d+ messages into b1\./);
+	assert.match(note ?? "", /Only compact again/);
+	assert.equal(hasNudge(), false, "a pre-fold nudge must not sit beside fresh folds");
+	pairsIntact();
+
+	// Two answers later the note is gone and the summary stays.
+	assistant("later", 250);
+	assert.equal(receipt(), undefined);
+	assert.ok(
+		projectSlots(buildView(entries), appended).some((slot) => slot.block?.id === "b1"),
+		"the summary outlives its receipt",
+	);
+	pairsIntact();
 });

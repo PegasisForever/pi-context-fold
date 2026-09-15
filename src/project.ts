@@ -29,6 +29,11 @@ export function projectSlots(view: ViewItem[], blocks: FoldBlock[]): Slot[] {
 		if (block && !summarised.has(block.id)) {
 			summarised.add(block.id);
 			out.push({ message: summaryMessage(block), block });
+			// The fold's own result is seen once mid-turn and leaves with its call, so without
+			// this the next choice happens with no record of what just landed (§4b). Two
+			// newer assistants means the model has answered past a menu round-trip, so the
+			// note is gone by the second fold decision at the latest.
+			if (assistantsNewerThan(view, block.timestamp) < 2) out.push({ message: foldReceipt(block) });
 		}
 		// An answered nudge leaves no slot, but a folded nudge still anchors its summary above.
 		if (goneNudges.has(item.entryId)) continue;
@@ -77,6 +82,46 @@ export function staleNudgeEntries(view: ViewItem[], blocks: FoldBlock[]): Set<st
 			stale.add(item.entryId);
 	}
 	return stale;
+}
+
+/** Assistants in the view newer than a timestamp. The clock every ephemeral note ages by: the menu
+ * is fresh for the current assistant message or the one before it, and the fold receipt below
+ * survives one menu round-trip the same way. Counts view assistants, never projected ones. */
+export function assistantsNewerThan(view: ViewItem[], timestamp: number): number {
+	let n = 0;
+	for (const item of view) {
+		const message = item.message;
+		if (message.role === "assistant" && message.timestamp > timestamp) n++;
+	}
+	return n;
+}
+
+/** MODEL-FACING-TEXT.md §4b. Derived from the record at send time — never stored, never paired, so
+ * no orphan risk and nothing to absorb. No span ids: the menu that issued them is already stale or
+ * going, and reissued ids would point at new text. The id names the block whose summary stands
+ * directly above the note (its transcript path carries the same id). */
+export function foldReceipt(block: FoldBlock): Msg {
+	return {
+		role: "user",
+		content: [
+			{
+				type: "text",
+				text: `<${NUDGE_CUSTOM_TYPE}>\n${receiptText(block)}\n</${NUDGE_CUSTOM_TYPE}>`,
+			},
+		],
+		timestamp: block.timestamp,
+	};
+}
+
+/** The numbers are the receipt; the last sentence is the stop rule. It lives here and not in the
+ * menu because the choice it serves exists only on post-fold turns: first folds answer the nudge
+ * or the user's order, which already cover whether. */
+export function receiptText(block: FoldBlock): string {
+	return (
+		`Compacted ${block.msgs} messages into ${block.id}. ` +
+		`${shortTokens(block.tokensBefore)} → ${shortTokens(block.tokensAfter)}. ` +
+		`Only compact again if large finished work is left; otherwise carry on with the user's work.`
+	);
 }
 
 /** Empty, not "names no span": the extension this replaces also called its tool `compress` and carried
