@@ -224,8 +224,8 @@ the menu (MODEL-FACING-TEXT.md §3a) names two things to keep out of a span — 
 is reading, and a skill's instructions while still working under them. The user's messages were
 the third, to **carry forward verbatim**, and information did not hold: asked for *"intent and
 corrections, fully preserved"*, one model wrote a clause for 61 messages; asked for every message
-verbatim, it kept 36 of 200 (§17, rows 19.87–19.88). So code keeps them, and the line now tells
-the model they are attached.
+verbatim, it kept 36 of 200 (§17, rows 19.87–19.88). So code keeps the words, and the line asks
+the model for their intent and corrections (§17, row 19.90).
 
 That last distinction matters and the first draft of this section got it wrong. "Do not fold
 the user's standing requirements" is not executable: an entry spans ~34 rounds and there is
@@ -1030,6 +1030,7 @@ fires at a sensible moment.
 | 19.50 | "menu tokens are excluded from the growth measurement" | they are not; the menu result just leaves the view next round | the arithmetic was wrong (20K, not 200K) and Pi's single number has nothing to subtract from |
 | 19.51 | A "hold the summary until no call is pending" condition | complete the closure's transitivity instead | the mid-round case becomes unrepresentable rather than handled — C4 |
 | 19.52 | "excluding compaction entries makes coverage contiguous" | it does not; coverage can split regardless | a span with no compaction entry, contiguous when folded, splits when a newer compaction hoists past an older one |
+| 19.90 | The instruction tells the model the user's messages are attached, so it does not repeat them | it asks again for the user's intent and corrections to be fully preserved | the words are kept by code (19.88), so the line is free to ask for what the code cannot keep: what the user meant and changed. The user's own edit to MODEL-FACING-TEXT.md |
 | 19.89 | The refusal names only the spans that fell short | it names every span, telling the long enough ones to be sent again unchanged, and says nothing was saved | replayed live: one of three spans fell short, the model resent that one alone as its second try, it landed, and the other two — about 230K — were never folded. A first wording, *Long enough, keep it*, was read as "leave it out": three of four replays dropped a span from the retry |
 | 19.88 | The model is told to keep the user's messages verbatim | the fold attaches them itself, stored on the record, shown under the summary, counted toward its size | replayed three times on the medi session with the verbatim line: 36 of 200 typed messages kept whole, 153 missing, among them short orders such as *add logcli yq duckdb httpie into the docker image*. What the user asked for is the one part of a span a summary may not lose, and it is ours to copy |
 | 19.87 | "The intent, corrections, etc from the user must be fully preserved" | "All the messages from the user must be preserved verbatim in the summary" | live: 61 user messages, 14,802 characters, survived as *per user override* in a 1,336-character summary. A quote cannot be paraphrased away, and it counts toward the 5% target |

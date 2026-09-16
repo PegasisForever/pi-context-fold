@@ -172,7 +172,7 @@ To compact one entry, set from and to to the same id.
 <how-to-summarize>
 You and only you will be the reader of the summary.
 Carry the conclusions you would otherwise have to derive again, and say enough about the rest to know when the full transcript file is worth opening.
-The user's messages in the span are attached under your summary word for word, so do not repeat them.
+The intent, corrections, etc from the user must be fully preserved in the summary.
 Keep a summary of what you did in response to the user messages.
 Keep verbatim for these because they are the search keys into the transcript file: full paths, identifiers and signatures, error strings, versions, numbers, thresholds, etc.
 Keep what each piece of work was trying to settle, each decision with the reason for it, each dead end with what killed it, and every question left open.

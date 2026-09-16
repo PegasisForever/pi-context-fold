@@ -176,7 +176,7 @@ To compact one entry, set from and to to the same id.
 <how-to-summarize>
 You and only you will be the reader of the summary.
 Carry the conclusions you would otherwise have to derive again, and say enough about the rest to know when the full transcript file is worth opening.
-The user's messages in the span are attached under your summary word for word, so do not repeat them.
+The intent, corrections, etc from the user must be fully preserved in the summary.
 Keep a summary of what you did in response to the user messages.
 Keep verbatim for these because they are the search keys into the transcript file: full paths, identifiers and signatures, error strings, versions, numbers, thresholds, etc.
 Keep what each piece of work was trying to settle, each decision with the reason for it, each dead end with what killed it, and every question left open.
@@ -196,14 +196,16 @@ gives characters as well as tokens, because characters are what the model can ju
 writes, and Pi's estimate is a quarter of them. The floor is stated here so the refusal (§5) is
 never a surprise.
 
-**Your messages are kept word for word, by code.** The line used to ask for *"the intent,
-corrections, etc"* to be *"fully preserved"*, and the model preserved them as a clause: 61 of
-your messages, 14,802 characters, became *"per user override"* inside a 1,336-character summary.
-Asked instead to keep every one verbatim, it kept 36 of 200 across three replays of that
-session. So the fold attaches them itself, under the summary (§6), and this line only tells the
-model they are there, so it does not spend its summary repeating them.
+**Your messages are kept word for word, by code; the line asks for what they meant.** Asked for
+*"the intent, corrections, etc"* to be *"fully preserved"*, the model preserved them as a clause:
+61 of your messages, 14,802 characters, became *"per user override"* inside a 1,336-character
+summary. Asked instead to keep every one verbatim, it kept 36 of 200 across three replays of
+that session. So the fold attaches the words itself, under the summary (§6), and the line is
+back to asking for their intent and corrections — what the user wanted and changed, carried
+into the account of the work. It does not say the words are attached. The replays that had a
+line saying so showed no quote repeated in a summary; without it, that is not yet measured.
 
-**372 tokens**, measured with Pi's own `estimateTokens`, up from 337 for the size and quote lines. Compare the prior
+**367 tokens**, measured with Pi's own `estimateTokens`, up from 337 for the size line. Compare the prior
 art: `billion-context-pi`'s system prompt is **3,704 tokens in every request**, and its
 nudge adds 1,366 of which 1,179 duplicate the system prompt verbatim.
 
@@ -274,7 +276,7 @@ message, so the session held two rounds, H1 excluded both, and the table came ba
 Nothing is compactable yet, try again when the conversation is longer.
 ```
 
-No table, no example, **and no §3a instruction**: 372 tokens of guidance on choosing a span
+No table, no example, **and no §3a instruction**: 367 tokens of guidance on choosing a span
 is waste when there is no span to choose (P1), and the paragraph alone reads as a complete
 answer. An example naming ids that do not exist is what caused the model to fold `e2–e3` in
 that run (C8 — the failure was our information, not the model).
@@ -679,14 +681,14 @@ Last reminder before the context runs out.
 |---|---|
 | **Every request** (system prompt + one tool schema) | **343** (158 + 185) |
 | Per nudge | 165, or 123 for the last one and for `/compact` |
-| Per menu | ~5,300 (372 of it instruction) |
+| Per menu | ~5,300 (367 of it instruction) |
 | Per fold | ~48 receipt (+~10 per further block in the call) + ~15 permanent prefix |
 
 The original, **measured** rather than estimated: **3,704 tokens of system prompt in every
 request**, plus four tool schemas, plus a ref tag on every message in context, plus 1,366
 tokens per nudge of which 1,179 repeat the system prompt verbatim.
 
-Ours: **343 tokens per request**, and the 372-token instruction is paid only on the turns
+Ours: **343 tokens per request**, and the 367-token instruction is paid only on the turns
 where a fold actually happens.
 
 ---
