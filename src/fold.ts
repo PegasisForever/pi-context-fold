@@ -116,24 +116,22 @@ export function registerFold(pi: ExtensionAPI, state: FoldState): void {
 			applyAll(pi, planned);
 			state.menu = undefined;
 			state.folded = true;
-			// One text per landed block (§4, §4b), said twice: in the result, which leaves the view
-			// with its call on the very next request, and in a stored note, an entry in the log and
-			// the TUI like every other extension message, which stays in the view. Only fully applied
-			// folds get one — applyAll throws before this on a partial failure.
-			const texts = planned.map(({ record }) => receiptText(record));
-			for (const text of texts) {
-				pi.sendMessage<Shown>(
-					{
-						customType: RECEIPT_CUSTOM_TYPE,
-						content: `<${NUDGE_CUSTOM_TYPE}>\n${text}\n</${NUDGE_CUSTOM_TYPE}>`,
-						details: { lines: [text] },
-						display: true,
-					},
-					{ deliverAs: "followUp", triggerTurn: false },
-				);
-			}
+			// One text per call (§4, §4b), said twice: in the result, which leaves the view with its
+			// call on the very next request, and in one stored note, an entry in the log and the TUI
+			// like every other extension message, which stays in the view. Only fully applied folds
+			// get one — applyAll throws before this on a partial failure.
+			const text = receiptText(planned.map(({ record }) => record));
+			pi.sendMessage<Shown>(
+				{
+					customType: RECEIPT_CUSTOM_TYPE,
+					content: `<${NUDGE_CUSTOM_TYPE}>\n${text}\n</${NUDGE_CUSTOM_TYPE}>`,
+					details: { lines: text.split("\n") },
+					display: true,
+				},
+				{ deliverAs: "followUp", triggerTurn: false },
+			);
 			return {
-				content: [{ type: "text", text: texts.join("\n") }],
+				content: [{ type: "text", text }],
 				details: { lines: planned.map((one) => foldForYou(one.record, one.fold)) },
 			};
 		},

@@ -1,3 +1,4 @@
+import { basename, dirname } from "node:path";
 import type { FoldBlock, Msg, Slot, ViewItem } from "./types.ts";
 
 export const TOOL_NAME = "compact";
@@ -87,22 +88,40 @@ export function staleNudgeEntries(view: ViewItem[], blocks: FoldBlock[]): Set<st
 	return stale;
 }
 
-/** MODEL-FACING-TEXT.md §4 and §4b. The one text a landed block is reported with: the fold's tool
- * result and the stored receipt both say exactly this, so the two can never disagree. The numbers
- * are the receipt; "carry on" follows them, and it lives here and not in the menu because the
- * choice it serves exists only on post-fold turns. No span ids: the receipt stays in the view for
- * good, and the menu that issued them is already stale or going. The path goes last and in
- * backticks, so no punctuation can be read as part of it, and it outlives the summary: a later
- * fold that absorbs this block takes the summary away, never the file. One line per landed block;
- * read in order the receipts are the ledger of what this session has compacted. */
-export function receiptText(block: FoldBlock): string {
-	return (
-		`You just compacted ${block.msgs} messages into ${block.id}. ` +
-		`${shortTokens(block.tokensBefore)} → ${shortTokens(block.tokensAfter)}. ` +
-		`Carry on with the user's work. ` +
-		`Full transcript is saved at: \`${block.originalPath}\``
-	);
+/** MODEL-FACING-TEXT.md §4 and §4b. The one text a `compact` call is reported with: its tool
+ * result and its stored receipt both say exactly this, so the two can never disagree. One text per
+ * call, however many blocks landed: the closing sentence is said once, and the folder once, where
+ * one note per block repeated both on every later request. "Carry on" lives here and not in the
+ * menu because the choice it serves exists only on post-fold turns. No span ids: the receipt stays
+ * in the view for good, and the menu that issued them is already stale or going. Paths sit in
+ * backticks, so no punctuation can be read as part of them, and they outlive the summaries: a later
+ * fold that absorbs a block takes its summary away, never its file. Read in order, the receipts
+ * are the ledger of what this session has compacted. */
+export function receiptText(blocks: FoldBlock[]): string {
+	const [only] = blocks;
+	if (only !== undefined && blocks.length === 1) {
+		return (
+			`You just compacted ${count(only.msgs)} messages into ${only.id}. ` +
+			`${shortTokens(only.tokensBefore)} → ${shortTokens(only.tokensAfter)}. ` +
+			`Carry on with the user's work. ` +
+			`Full transcript is saved at: \`${only.originalPath}\``
+		);
+	}
+	// One call writes every block into the same session folder.
+	const folder = dirname(blocks[0]?.originalPath ?? "");
+	const msgs = blocks.reduce((sum, block) => sum + block.msgs, 0);
+	return [
+		`You just compacted ${count(msgs)} messages into ${blocks.length} blocks. Full transcripts are saved in \`${folder}/\`:`,
+		...blocks.map(
+			(block) =>
+				`- ${block.id}: ${count(block.msgs)} messages, ` +
+				`${shortTokens(block.tokensBefore)} → ${shortTokens(block.tokensAfter)}, \`${basename(block.originalPath)}\``,
+		),
+		"Carry on with the user's work.",
+	].join("\n");
 }
+
+const count = (n: number): string => n.toLocaleString("en-US");
 
 /** Empty, not "names no span": the extension this replaces also called its tool `compress` and carried
  * the span in `content`, so 27 such calls across 9 of the 25 recorded sessions read as menu calls and

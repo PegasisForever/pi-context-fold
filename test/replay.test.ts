@@ -218,7 +218,7 @@ test("§4b: the stored receipt stays in the view for every later answer", () => 
 		message: {
 			role: "custom",
 			customType: RECEIPT_CUSTOM_TYPE,
-			content: `<pi-context-fold>\n${receiptText(folded)}\n</pi-context-fold>`,
+			content: `<pi-context-fold>\n${receiptText([folded])}\n</pi-context-fold>`,
 			display: true,
 			timestamp: 210,
 		} as Msg,
@@ -293,8 +293,16 @@ test("the status line is MODEL-FACING-TEXT.md §9's, and shows no context number
 test("MODEL-FACING-TEXT.md §4, §4b and §6: the success result, the receipt and the summary wrapper are the document's", () => {
 	const record = block({ id: "b5", msgs: 38, originalPath: "~/.pi/agent/context-fold/01a094/b5.txt" });
 	// The backticks are the model's, not markdown: §4b's fenced block shows them literally.
-	assert.equal(receiptText(record), flat(quoted("4")));
-	assert.equal(`<pi-context-fold>\n${receiptText(record)}\n</pi-context-fold>`, fenced("4b"));
+	assert.equal(receiptText([record]), flat(quoted("4")));
+	assert.equal(`<pi-context-fold>\n${receiptText([record])}\n</pi-context-fold>`, fenced("4b", 0));
+	const second = block({
+		id: "b6",
+		msgs: 9,
+		tokensBefore: 22_000,
+		tokensAfter: 800,
+		originalPath: "~/.pi/agent/context-fold/01a094/b6.txt",
+	});
+	assert.equal(`<pi-context-fold>\n${receiptText([record, second])}\n</pi-context-fold>`, fenced("4b", 1));
 
 	const message = summaryMessage({ ...record, summary: "…the model's summary text…" });
 	// §6: the role is load-bearing. pi-ai reads a `user` message as interrupting a tool flow, which
@@ -470,7 +478,7 @@ function driveCompact() {
 }
 
 test("§2a: two spans in one call, and every one of the three defects is refused", async () => {
-	const { call, appended, state } = driveCompact();
+	const { call, appended, state, entries } = driveCompact();
 	await call({});
 	assert.ok((state.menu as unknown as { entries: unknown[] }).entries.length >= 4, "need four entries");
 
@@ -504,9 +512,20 @@ test("§2a: two spans in one call, and every one of the three defects is refused
 		[...new Set(appended.flatMap((one) => one.entryIds))].sort(),
 		"two blocks must not claim the same entry",
 	);
+	// One call, one text, one record: the lines in view order, the closing sentence once.
+	const text = result.content[0]?.text ?? "";
 	assert.match(
-		result.content[0]?.text ?? "",
-		/^You just compacted \d+ messages into b1\. [^\n]*\nYou just compacted \d+ messages into b2\. [^\n]*$/,
+		text,
+		/^You just compacted \d+ messages into 2 blocks\. [^\n]*\n- b1: [^\n]*\n- b2: [^\n]*\nCarry on/,
+	);
+	assert.equal(text.match(/Carry on/g)?.length, 1);
+	const receipts = entries.filter(
+		(e) => e.type === "custom_message" && e.customType === RECEIPT_CUSTOM_TYPE,
+	);
+	assert.equal(receipts.length, 1, "one record per compact call, not one per block");
+	assert.equal(
+		(receipts[0] as { content?: string }).content,
+		`<pi-context-fold>\n${text}\n</pi-context-fold>`,
 	);
 
 	// Defect 3: the transcript of every block exists before any of them is appended.

@@ -293,9 +293,10 @@ decision is actually made. Neither text is duplicated.
 
 > You just compacted 38 messages into b5. 412K → 3.1K. Carry on with the user's work. Full transcript is saved at: `~/.pi/agent/context-fold/01a094/b5.txt`
 
-One line per landed block, and the same text as the receipt (§4b), built by the same function
-(`receiptText`), so the result and the record can never disagree. Carries the block id, the
-numbers and the path. Their issue #376 was the block id missing: *"the compress result lacks new
+One text per call, and the same text as the receipt (§4b), built by the same function
+(`receiptText`), so the result and the record can never disagree. A call that lands one block
+gets this line; a call that lands several gets §4b's list form. Carries the block id, the numbers
+and the path. Their issue #376 was the block id missing: *"the compress result lacks new
 block ids and actual ref spans, so the model's block ledger drifts from the session."* The ref
 span is not repeated: the model named it in its own call, and the receipt that carries this text
 afterwards stays in the view for good, where a menu id would point at text the id no longer names.
@@ -311,8 +312,9 @@ A fold's own result leaves the view with its call before the model's next reques
 this the next choice would happen with no record of what just landed. The receipt keeps the
 numbers in view, and nothing retires it: it is the only thing in the context that says the model
 compacted, so it stays until a later fold covers the entry and carries it into that fold's
-transcript. The fold sends it as a stored entry: an entry in the log and the TUI, so installed can
-be told apart from sent and the log confirms what the view showed. A note that exists only in the
+transcript. Each `compact` call sends one, however many blocks it landed, as a stored entry: an
+entry in the log and the TUI, so installed can be told apart from sent and the log confirms what
+the view showed. A note that exists only in the
 projection cannot be told apart from a note that was never sent.
 
 The text is the tool result's, word for word (§4). No span ids: the menu that issued them is
@@ -320,8 +322,9 @@ already stale or going, and reissued ids would point at new text. The id names t
 summary sits above the note. *"Carry on with the user's work"* lives here and not in the menu
 because the choice it serves exists only on post-fold turns. The path goes last and in backticks —
 literally, the model reads them — so no punctuation can be read as part of it, and it outlives the
-summary: a later fold that absorbs this block takes the summary away,
-never the file.
+summary: a later fold that absorbs this block takes the summary away, never the file.
+
+One block:
 
 ```
 <pi-context-fold>
@@ -329,7 +332,21 @@ You just compacted 38 messages into b5. 412K → 3.1K. Carry on with the user's 
 </pi-context-fold>
 ```
 
-**≈ 48 tokens per landed block, held for the rest of the session; permanent in the log.**
+Several blocks in one call — one line each, and the folder and the closing sentence said once.
+One note per block said both on every line, and every later request paid for all of them: six
+blocks cost ~290 tokens that way, ~107 this way.
+
+```
+<pi-context-fold>
+You just compacted 47 messages into 2 blocks. Full transcripts are saved in `~/.pi/agent/context-fold/01a094/`:
+- b5: 38 messages, 412K → 3.1K, `b5.txt`
+- b6: 9 messages, 22K → 0.8K, `b6.txt`
+Carry on with the user's work.
+</pi-context-fold>
+```
+
+**≈ 48 tokens for one block, plus ~10 per further block in the same call, held for the rest of
+the session; permanent in the log.**
 
 ---
 
@@ -580,7 +597,7 @@ Last reminder before the context runs out.
 | **Every request** (system prompt + one tool schema) | **343** (158 + 185) |
 | Per nudge | 165, or 123 for the last one and for `/compact` |
 | Per menu | ~5,300 (337 of it instruction) |
-| Per fold | ~48 receipt + ~15 permanent prefix |
+| Per fold | ~48 receipt (+~10 per further block in the call) + ~15 permanent prefix |
 
 The original, **measured** rather than estimated: **3,704 tokens of system prompt in every
 request**, plus four tool schemas, plus a ref tag on every message in context, plus 1,366
