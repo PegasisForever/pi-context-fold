@@ -526,7 +526,7 @@ nudge when  predicted − baseline ≥ nudgeGrowthTokens
 No clamp on the step. The first draft capped it at 25% of the window for a 128K-window
 model, which C2 excludes and no log shows.
 
-Baseline handling — three rules, and the third is the one that was wrong:
+Baseline handling — four rules. The third was wrong once, and the fourth was missing:
 
 - **session start → `baseline = 0`**, not the current number. An earlier version anchored on
   the current context, which is correct for a new session and wrong for a resumed one:
@@ -537,6 +537,13 @@ Baseline handling — three rules, and the third is the one that was wrong:
   `session_start` special case rather than adding a fourth rule for resume (§17, row 19.56).
 - on a nudge → `baseline = predicted`
 - **on a fold → `baseline = predicted` only if `predicted` actually fell.**
+- **on `/compact` → the baseline is unknown, and the next measurement becomes it.** The request
+  already asks for a fold, so a reminder in the same turn repeats it. Setting the baseline to the
+  number Pi showed when you pressed the key is not enough: that number can be an estimate
+  anchored on an old reply. Measured live on a resumed session, Pi showed 218K, the first real
+  reply said 576K, and a reminder of 576K of "growth" landed on top of the compaction you had
+  just asked for (§17, row 19.81). Growth is counted from that first reply, so a model that
+  declines is still reminded 200K later.
 
 The first draft re-anchored on *any* successful fold. With no benefit floor, a fold that
 reclaims 712 tokens — the smallest real one in the log — re-anchors the baseline at 899K
@@ -691,10 +698,10 @@ smaller than the content it replaces, log it. The fold still happens.
 
 | File | Purpose | Lines |
 |---|---|---|
-| `fold.ts` | the one tool: the menu, the spans, the records, the receipt | 271 |
+| `fold.ts` | the one tool: the menu, the spans, the records, the receipt | 273 |
 | `menu.ts` | even-count partition, rendering | 178 |
-| `emergency.ts` | `session_before_compact`: `/compact`, and the overflow cut | 117 |
-| `index.ts` | event wiring, tool registration | 122 |
+| `emergency.ts` | `session_before_compact`: `/compact`, and the overflow cut | 121 |
+| `index.ts` | event wiring, tool registration, the growth clock | 128 |
 | `project.ts` | fold projection, block edit, pair removal, nudge retirement, the fold text | 150 |
 | `dump.ts` | write the transcripts to the session cache dir | 86 |
 | `nudge.ts` | the three nudge texts, and the one place they are sent from | 88 |
@@ -705,7 +712,7 @@ smaller than the content it replaces, log it. The fold still happens.
 | `status.ts` | `setStatus` line | 15 |
 | `view.ts` | build the view from entries | 14 |
 | `log.ts` | one JSON line writer | 13 |
-| **Total** | **1,228**, against a first estimate of ~830. | |
+| **Total** | **1,240**, against a first estimate of ~830. | |
 
 Against ~9,950 lines of source in the original.
 
@@ -713,12 +720,13 @@ Against ~9,950 lines of source in the original.
 
 ## 12. The test suite
 
-**Ten tests, 574 lines.** They build their own fixtures and depend on nothing outside the
+**Eleven tests, 623 lines.** They build their own fixtures and depend on nothing outside the
 repository: block records read back from the branch and absorbed correctly, the status line,
 the model-facing strings §4, §4b, §6, §7, §7a and §7b read out of `docs/MODEL-FACING-TEXT.md`
-rather than copied, the one token format, and two that drive the real tool through a stub session — one
-for the three defects the list of spans must not bring back, one for a list of ids that is no
-longer current (§6).
+rather than copied, the one token format, two that drive the real tool through a stub session —
+one for the three defects the list of spans must not bring back, one for a list of ids that is
+no longer current (§6) — and one that drives the real event handlers through `/compact` and the
+growth clock (§8).
 
 **There used to be forty-four.** The other forty replayed a corpus of 25 recorded session
 `.jsonl` files from one machine, by absolute path. Everything in §19's *Verified* column was
@@ -985,6 +993,7 @@ fires at a sensible moment.
 | 19.50 | "menu tokens are excluded from the growth measurement" | they are not; the menu result just leaves the view next round | the arithmetic was wrong (20K, not 200K) and Pi's single number has nothing to subtract from |
 | 19.51 | A "hold the summary until no call is pending" condition | complete the closure's transitivity instead | the mid-round case becomes unrepresentable rather than handled — C4 |
 | 19.52 | "excluding compaction entries makes coverage contiguous" | it does not; coverage can split regardless | a span with no compaction entry, contiguous when folded, splits when a newer compaction hoists past an older one |
+| 19.81 | `/compact` leaves the growth baseline alone | the first measurement after `/compact` becomes the baseline | live: a resumed session, a fresh process with the baseline at 0, and Pi's 218K estimate against a real 576K — the menu call's turn ended with a reminder of 576K of growth on top of the request; a baseline taken at the key press would still have been 358K too low |
 | 19.80 | `/compact` sends the ordinary nudge, §7 word for word; the three nudge texts written out separately; §7 untested | `/compact` sends its own request (§7b); the three texts share their sentences as constants, and the system prompt shares *"the compacted range and the summary are yours to decide"*; §7, §7a and §7b are read from the document by the suite | a key you pressed is not a growth reminder, and telling the model it may decline answers a question you did not ask; the untested nudge had already drifted from the document by a word (*see fit* against *seem suitable*) |
 | 19.79 | Tool result and receipt written by two functions (`resultLine` with span ids and "messages replaced"; `receiptText` with the stop rule) | one function, `receiptText`, for both: numbers, stop rule, path last | two texts for one event drift apart, and the result never reaches a request anyway — it leaves with its call before the next one — so the only copy the model reads is the receipt, which now also carries the path that outlives an absorbed summary |
 | 19.78 | The receipt leaves the view after one round-trip (two newer assistants) | it stays until a later fold covers it | the note is the only record that the model compacted, and an expiring record just moves the 560d loop one turn later — any post-fold turn with two model calls in it reaches the next decision empty-handed again; 40 tokens per block is not a reason |

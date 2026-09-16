@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { test } from "node:test";
 import type { SessionEntry } from "@earendil-works/pi-coding-agent";
 import { registerFold } from "../src/fold.ts";
+import contextFold from "../src/index.ts";
 import { NUDGE_GROWTH_TOKENS, sendNudge } from "../src/nudge.ts";
 import {
 	NUDGE_CUSTOM_TYPE,
@@ -329,6 +330,54 @@ test("MODEL-FACING-TEXT.md §7, §7a and §7b: the three nudges are the document
 		sent.map((one) => one.triggerTurn),
 		[false, true, true, true],
 	);
+});
+
+/**
+ * The medi session: a fresh process, `/compact`, and the first real reply measures 576K where
+ * Pi's estimate had said 218K. The growth clock counted that jump from its load-time 0 and sent a
+ * reminder straight into the compaction you had just asked for. A request is a reminder already,
+ * so the clock restarts from the first measurement after it — and still counts from there.
+ */
+test("/compact restarts the growth clock at the next measurement, and the clock still runs", () => {
+	const handlers: Record<string, (event: unknown, ctx: unknown) => unknown> = {};
+	const sent: string[] = [];
+	const pi = {
+		on: (name: string, handler: (event: unknown, ctx: unknown) => unknown) => {
+			handlers[name] = handler;
+		},
+		registerTool: () => {},
+		registerMessageRenderer: () => {},
+		appendEntry: () => {},
+		sendMessage: (message: { content: string }) => sent.push(message.content),
+	};
+	contextFold(pi as never);
+	let tokens = 0;
+	const ctx = {
+		getContextUsage: () => ({ tokens, contextWindow: 1_048_576 }),
+		ui: { setStatus: () => {} },
+		sessionManager: { getBranch: () => [], buildContextEntries: () => [], getSessionId: () => "s" },
+	};
+	const kinds = () =>
+		sent.map((text) => (text.includes("The user has requested") ? "request" : "reminder"));
+	const turnEnd = (at: number) => {
+		tokens = at;
+		handlers.turn_end?.({}, ctx);
+	};
+
+	tokens = 218_000;
+	const answer = handlers.session_before_compact?.({ reason: "manual" }, ctx);
+	assert.deepEqual(answer, { cancel: true });
+	assert.deepEqual(kinds(), ["request"]);
+
+	// The menu call's reply: the first real measurement. No reminder on top of the request.
+	turnEnd(576_000);
+	assert.deepEqual(kinds(), ["request"], "a reminder must not follow the request it repeats");
+
+	// The model declined; growth is counted from 576K, not from 0 and not from the old 218K.
+	turnEnd(775_000);
+	assert.deepEqual(kinds(), ["request"]);
+	turnEnd(776_000);
+	assert.deepEqual(kinds(), ["request", "reminder"]);
 });
 
 test("one token format, everywhere", () => {

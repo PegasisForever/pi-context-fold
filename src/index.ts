@@ -49,7 +49,7 @@ export default function contextFold(pi: ExtensionAPI): void {
 	// registered in `session_start` disappears for the whole session the first time anything there
 	// fails — while the system prompt goes on saying it exists.
 	registerFold(pi, state);
-	registerEmergency(pi, config);
+	registerEmergency(pi, config, state);
 
 	pi.registerMessageRenderer<Shown>(NAME, (message, _options, theme) =>
 		labelled(theme, NAME, message.details?.lines ?? []),
@@ -86,7 +86,9 @@ function reportOrphans(ctx: ExtensionContext, state: FoldState, blocks: FoldBloc
  * nudged on its first turn instead of needing 1.0M to reach a baseline it was born at. It follows
  * the number down and only rises on a nudge — a fold that reclaimed 712 tokens must not re-anchor at
  * 899K and silence the session until overflow (§17.9). It falls a turn late after a fold, which is
- * what the one-round pause covers.
+ * what the one-round pause covers. After `/compact` it is unknown, and the next measurement becomes
+ * it: the request already asked for a fold, and the number Pi showed when you pressed the key can be
+ * an estimate hundreds of K below the first real one — 218K against 576K, measured live.
  */
 function nudge(pi: ExtensionAPI, ctx: ExtensionContext, state: FoldState, config: Config): void {
 	const usage = ctx.getContextUsage();
@@ -94,6 +96,10 @@ function nudge(pi: ExtensionAPI, ctx: ExtensionContext, state: FoldState, config
 	// we inherit the honesty: there is no second meter to fall back on (§7).
 	if (usage === undefined || usage.tokens === null) return;
 	const predicted = usage.tokens;
+	if (state.baseline === undefined) {
+		state.baseline = predicted;
+		return;
+	}
 	if (predicted < state.baseline) state.baseline = predicted;
 	if (state.folded) {
 		state.folded = false;

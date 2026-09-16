@@ -7,6 +7,7 @@ import {
 } from "@earendil-works/pi-coding-agent";
 import type { Config } from "./config.ts";
 import { messageText, writeOverflow } from "./dump.ts";
+import type { FoldState } from "./fold.ts";
 import { log } from "./log.ts";
 import { rounds } from "./menu.ts";
 import { sendNudge } from "./nudge.ts";
@@ -19,7 +20,7 @@ import { buildView } from "./view.ts";
  * summarisation call itself (D5), so its summariser must never run: ordinary pressure is cancelled,
  * a real overflow is answered with a mechanical cut, and nothing here throws.
  * No model call, so there is no timeout, no rate limit and no fallback for either. */
-export function registerEmergency(pi: ExtensionAPI, config: Config): void {
+export function registerEmergency(pi: ExtensionAPI, config: Config, state: FoldState): void {
 	pi.on("session_before_compact", (event, ctx) => {
 		if (event.reason === "threshold") return { cancel: true };
 		// `/compact` cannot be removed from Pi, so it is answered rather than obeyed (§7b). Pi's
@@ -28,6 +29,9 @@ export function registerEmergency(pi: ExtensionAPI, config: Config): void {
 		// The mechanical cut is kept for "overflow", where there is no turn left to ask in.
 		if (event.reason === "manual") {
 			sendNudge(pi, ctx, "manual", config.nudgeGrowthTokens);
+			// A request is a reminder already: growth is counted again from the first measurement
+			// after it, so the turn it starts does not end with a reminder of the same thing (§8).
+			state.baseline = undefined;
 			log("manual-compact", {});
 			return { cancel: true };
 		}

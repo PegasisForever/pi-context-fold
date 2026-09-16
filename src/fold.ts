@@ -52,7 +52,9 @@ export interface FoldState {
 	/** Assistant messages in the view when that menu was served. See `fresh` (§5). */
 	menuAt: number;
 	folded: boolean;
-	baseline: number;
+	/** Where growth is counted from (§8). `undefined` means "the next measurement": set by a request
+	 * to compact, whose own turn is the first chance to measure. */
+	baseline: number | undefined;
 	reported: Set<string>;
 }
 
