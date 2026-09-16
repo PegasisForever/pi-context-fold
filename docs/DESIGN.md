@@ -213,14 +213,19 @@ to exclude. A rule that cannot be violated is not a rule.
 ### 4b. Nothing is protected
 
 **There is no protected-content mechanism.** No user message, no skill load, no tool output
-is mechanically exempt from folding. The model may fold any span the menu offers, and the
-projection has no notion of content that survives inside a fold.
+is mechanically exempt from folding. The model may fold any span the menu offers. **One thing
+survives inside a fold: the user's own words.** The fold record stores every message the user
+sent in the span, and the summary shows them under the model's text, word for word
+(MODEL-FACING-TEXT.md §6; §17, row 19.88). An absorbing fold takes the absorbed block's quotes,
+in place.
 
-What replaced them is **information, not enforcement** (C8). The instruction returned with
+Everything else is **information, not enforcement** (C8). The instruction returned with
 the menu (MODEL-FACING-TEXT.md §3a) names two things to keep out of a span — whatever the current step
-is reading, and a skill's instructions while still working under them — and one thing to
-**carry forward verbatim**: a standing requirement, acceptance criterion or constraint the
-user gave.
+is reading, and a skill's instructions while still working under them. The user's messages were
+the third, to **carry forward verbatim**, and information did not hold: asked for *"intent and
+corrections, fully preserved"*, one model wrote a clause for 61 messages; asked for every message
+verbatim, it kept 36 of 200 (§17, rows 19.87–19.88). So code keeps them, and the line now tells
+the model they are attached.
 
 That last distinction matters and the first draft of this section got it wrong. "Do not fold
 the user's standing requirements" is not executable: an entry spans ~34 rounds and there is
@@ -593,8 +598,11 @@ cut. That one says so and asks for the fold. It is a fact about the arithmetic, 
 threshold to tune.
 
 **Only the last nudge starts a turn of its own**, with `triggerTurn: true`; an ordinary nudge
-never does. **Every nudge is a steer** (`deliverAs: "steer"`): sent while the model runs, it is
-read at the model's next call, mid-task or not. The last nudge used to be a follow-up, which Pi
+never does. **Every nudge is read at the model's next call, mid-task or not.** The last nudge
+and the `/compact` request are steers (`deliverAs: "steer"`). The growth nudge has no delivery
+option, because Pi reads one only for a message that starts a turn: Pi appends it when the
+current turn ends, which has the same effect. The receipt is sent the same way. The last nudge
+used to be a follow-up, which Pi
 holds until the model stops — so the warning that the window is about to run out waited behind
 however much work was left, and the fold always landed after your task instead of inside it
 (§17, row 19.84). The first version woke the model on every nudge, on the grounds that a queued nudge leaves the
@@ -708,14 +716,16 @@ smaller than the content it replaces, log it. The fold still happens.
 
 **One check refuses: size.** The menu asks for a summary of 5% of the span's tokens, and
 `compact` refuses the whole call if any summary is under 3%, before anything is written
-(MODEL-FACING-TEXT.md §3a, §5). Both numbers are constants in `menu.ts`, and the menu text is
-built from them. The instruction used to say *"whatever length the span needs"*; one model read
+(MODEL-FACING-TEXT.md §3a, §5). Both numbers are constants in `menu.ts`; the menu line and the
+refusal state them as fixed text, and the suite reads both from the document. The instruction used to say *"whatever length the span needs"*; one model read
 that as "short" on every fold — 0.1–0.4%, 112K into 110 tokens — while its span held eleven times
 more of your own words than the summary (§17, row 19.85). A refused call keeps the menu's ids
 current for one more message, since it changed nothing, so the retry does not pay for a second
 menu. **The refusal happens once:** the next try lands whatever its size, until a fold lands or
-the run ends (§17, row 19.86). The check reads Pi's estimate on both sides, so the ratio is the estimator's, not a
-tokenizer's.
+the run ends (§17, row 19.86). **It names every span of the call**,
+and tells the long enough ones to be sent again: named only the short one, a replayed model
+resent that span alone, and the rest of its fold never landed (§17, row 19.89). The check reads
+Pi's estimate on both sides, so the ratio is the estimator's, not a tokenizer's.
 
 ---
 
@@ -723,21 +733,21 @@ tokenizer's.
 
 | File | Purpose | Lines |
 |---|---|---|
-| `fold.ts` | the one tool: the menu, the spans, the records, the receipt, the size floor, ending a run that exists only to compact | 359 |
-| `menu.ts` | even-count partition, rendering, the summary size target and floor | 190 |
+| `fold.ts` | the one tool: the menu, the spans, the records, the receipt, the size floor, ending a run that exists only to compact, the user's quotes | 368 |
+| `menu.ts` | even-count partition, rendering, the summary size target and floor | 187 |
 | `emergency.ts` | `session_before_compact`: `/compact`, and the overflow cut | 121 |
 | `index.ts` | event wiring, tool registration, the growth clock | 138 |
-| `project.ts` | fold projection, block edit, pair removal, nudge retirement, the fold text | 169 |
+| `project.ts` | fold projection, block edit, pair removal, nudge retirement, the fold text, the summary with its quotes | 189 |
 | `dump.ts` | write the transcripts to the session cache dir | 86 |
-| `nudge.ts` | the three nudge texts, and the one place they are sent from | 96 |
+| `nudge.ts` | the three nudge texts, and the one place they are sent from | 97 |
 | `config.ts` | the one key, out of Pi's settings file | 65 |
 | `shown.ts` | the TUI components both readers' halves are drawn with | 41 |
 | `state.ts` | block records via `appendEntry`, read from `getBranch()` | 36 |
-| `types.ts` | shared types | 32 |
+| `types.ts` | shared types | 36 |
 | `status.ts` | `setStatus` line | 15 |
 | `view.ts` | build the view from entries | 14 |
 | `log.ts` | one JSON line writer | 13 |
-| **Total** | **1,375**, against a first estimate of ~830. | |
+| **Total** | **1,406**, against a first estimate of ~830. | |
 
 Against ~9,950 lines of source in the original.
 
@@ -745,14 +755,15 @@ Against ~9,950 lines of source in the original.
 
 ## 12. The test suite
 
-**Thirteen tests, 833 lines.** They build their own fixtures and depend on nothing outside the
+**Fourteen tests, 920 lines.** They build their own fixtures and depend on nothing outside the
 repository: block records read back from the branch and absorbed correctly, the status line,
-the model-facing strings §3a, §4, §4b, §5 (the size refusal), §6, §7, §7a and §7b read out of
-`docs/MODEL-FACING-TEXT.md` rather than copied, the one token format, four that drive the real
-tool through a stub session — one for the three defects the list of spans must not bring back,
-one for a list of ids that is no longer current (§6), one for the size floor, its retry and its once-only refusal, one
-for which folds end the run (§7b) — and one that drives the real
-event handlers through `/compact` and the growth clock (§8).
+the model-facing strings §3a, §4, §4b, §5 (the size refusal), §6 (with
+and without quotes), §7, §7a and §7b read out of `docs/MODEL-FACING-TEXT.md` rather than copied,
+the one token format, five that drive the real tool through a stub session — one for the three
+defects the list of spans must not bring back, one for a list of ids that is no longer current
+(§6), one for the size floor, its retry and its once-only refusal, one for the user's quotes
+through a fold and an absorbing fold, one for which folds end the run (§7b) — and one that
+drives the real event handlers through `/compact` and the growth clock (§8).
 
 **There used to be forty-four.** The other forty replayed a corpus of 25 recorded session
 `.jsonl` files from one machine, by absolute path. Everything in §19's *Verified* column was
@@ -910,7 +921,7 @@ that runs.
 | A fold that would replace nothing is refused | the stale-menu case, reproduced and tested |
 | Blocks absorb correctly | chains of three, already-absorbed ids, entries already gone |
 | Replay is deterministic | same log twice, identical state |
-| Model-facing strings match this project's contract | §3a, §4, §4b, the §5 size refusal, §6, §7, §7a and §7b are read from `docs/MODEL-FACING-TEXT.md` on every run, not copied; §1, §2, §3b, the rest of §5, §8 and §9 were checked the same way by the deleted tests |
+| Model-facing strings match this project's contract | §3a, §4, §4b, the §5 size refusal, §6 with and without quotes, §7, §7a and §7b are read from `docs/MODEL-FACING-TEXT.md` on every run, not copied; §1, §2, §3b, the rest of §5, §8 and §9 were checked the same way by the deleted tests |
 
 Across seven audit rounds, roughly **250 mutations** were run against the tree; the
 survivors are listed in §17 and each is either equivalent or now covered.
@@ -1019,6 +1030,9 @@ fires at a sensible moment.
 | 19.50 | "menu tokens are excluded from the growth measurement" | they are not; the menu result just leaves the view next round | the arithmetic was wrong (20K, not 200K) and Pi's single number has nothing to subtract from |
 | 19.51 | A "hold the summary until no call is pending" condition | complete the closure's transitivity instead | the mid-round case becomes unrepresentable rather than handled — C4 |
 | 19.52 | "excluding compaction entries makes coverage contiguous" | it does not; coverage can split regardless | a span with no compaction entry, contiguous when folded, splits when a newer compaction hoists past an older one |
+| 19.89 | The refusal names only the spans that fell short | it names every span, telling the long enough ones to be sent again unchanged, and says nothing was saved | replayed live: one of three spans fell short, the model resent that one alone as its second try, it landed, and the other two — about 230K — were never folded. A first wording, *Long enough, keep it*, was read as "leave it out": three of four replays dropped a span from the retry |
+| 19.88 | The model is told to keep the user's messages verbatim | the fold attaches them itself, stored on the record, shown under the summary, counted toward its size | replayed three times on the medi session with the verbatim line: 36 of 200 typed messages kept whole, 153 missing, among them short orders such as *add logcli yq duckdb httpie into the docker image*. What the user asked for is the one part of a span a summary may not lose, and it is ours to copy |
+| 19.87 | "The intent, corrections, etc from the user must be fully preserved" | "All the messages from the user must be preserved verbatim in the summary" | live: 61 user messages, 14,802 characters, survived as *per user override* in a 1,336-character summary. A quote cannot be paraphrased away, and it counts toward the 5% target |
 | 19.86 | Every fold under 3% is refused | the first is; the next try lands whatever its size, until a fold lands or the run ends | live replay, three runs on a 570K session: refused summaries grew from 0.5–1.2% to 1.2–2.3% and stalled at 2–3%; with every try refused, no run folded anything in eight calls. One refusal keeps most of the gain and always lands |
 | 19.85 | *"Whatever length the span needs"*, and no check on size | the menu asks for 5% of the span's tokens; `compact` refuses a summary under 3%, and the refused call keeps the menu current for the retry | live: one model wrote 0.1–0.4% on every fold across three clones — 192K into 334 tokens, 112K into 110 — while the span held 61 of your messages, 14,802 characters, against a 1,336-character summary; another model wrote 1.3–8.3% under the same words |
 | 19.84 | The last nudge is a follow-up, and a fold ends the run whenever our request is the newest ask in the view | every nudge is a steer; a fold ends the run only when our request arrived with no task in progress, read from Pi's turn, message and run events | a follow-up waits until the model stops, so the last warning before the window fills waited behind the rest of the task; as a steer it can land mid-task, where ending the run would cut your work short. The view could not tell the two apart, and it misreads a run that ended on a terminating fold as still working |

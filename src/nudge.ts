@@ -46,9 +46,10 @@ export function sendNudge(pi: ExtensionAPI, ctx: ExtensionContext, kind: NudgeKi
 			details: { lines: used === undefined ? lines : [used, ...lines], kind },
 			display: true,
 		},
-		// A steer, every kind: read at the model's next call, mid-task or not. The growth reminder
-		// starts nothing; the other two start a run when none is going.
-		{ deliverAs: "steer", triggerTurn: kind !== "growth" },
+		// Read at the model's next call, mid-task or not. Pi reads `deliverAs` only for a message that
+		// starts a turn, so the growth reminder, which starts nothing, has none: Pi appends it when the
+		// current turn ends. The other two are steers, and start a run when none is going.
+		kind === "growth" ? { triggerTurn: false } : { deliverAs: "steer", triggerTurn: true },
 	);
 }
 
@@ -56,7 +57,7 @@ export function sendNudge(pi: ExtensionAPI, ctx: ExtensionContext, kind: NudgeKi
  * change to one wording is a change to every message that says it. `used` is left out when Pi does
  * not know the context size; §7b never states it, because the user asked and the number is not
  * what the request is about. */
-export function nudgeText(kind: NudgeKind, used: string | undefined, growth: number): string {
+function nudgeText(kind: NudgeKind, used: string | undefined, growth: number): string {
 	const how = `\`compact()\` with no arguments to list the spans and the summary writing instructions, then choose the span to compact.`;
 	const reminder = (next: string) => [REMINDER, used, next].filter(Boolean).join(" ");
 	switch (kind) {

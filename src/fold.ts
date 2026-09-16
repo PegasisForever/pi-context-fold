@@ -11,7 +11,9 @@ import {
 	RECEIPT_CUSTOM_TYPE,
 	receiptText,
 	shortTokens,
+	summaryBody,
 	TOOL_NAME,
+	typedText,
 } from "./project.ts";
 import { header, type Shown, shown } from "./shown.ts";
 import { liveBlocks } from "./state.ts";
@@ -112,15 +114,15 @@ export function registerFold(pi: ExtensionAPI, state: FoldState): void {
 			// have to pay for the whole menu again just to resend the same spans. Once only: the second
 			// try lands whatever its size. Replayed live, one model kept raising its summaries after
 			// each refusal but stalled at 2–3%, so a refusal that repeats never lands at all.
-			const short = state.refused
-				? []
-				: planned.filter(({ record }) => record.tokensAfter < record.tokensBefore * SUMMARY_FLOOR);
-			if (short.length > 0) {
+			const short = planned.some(
+				({ record }) => record.tokensAfter < record.tokensBefore * SUMMARY_FLOOR,
+			);
+			if (short && !state.refused) {
 				state.refused = true;
 				state.menuAt = assistants(view);
 				throw new Error(
 					tooShort(
-						short.map(({ record, fold }) => ({
+						planned.map(({ record, fold }) => ({
 							from: fold.from,
 							to: fold.to,
 							before: record.tokensBefore,
@@ -161,7 +163,7 @@ export function registerFold(pi: ExtensionAPI, state: FoldState): void {
 					details: { lines: text.split("\n") },
 					display: true,
 				},
-				{ deliverAs: "followUp", triggerTurn: false },
+				{ triggerTurn: false },
 			);
 			return {
 				content: [{ type: "text", text }],
@@ -205,7 +207,7 @@ export function trackRun(pi: ExtensionAPI, state: FoldState): void {
 		if (message.role === "user") state.compactOnly = false;
 		if (message.role !== "custom") return;
 		const kind =
-			message.customType === NUDGE_CUSTOM_TYPE ? (message.details as NudgeDetails)?.kind : undefined;
+			message.customType === NUDGE_CUSTOM_TYPE ? (message.details as NudgeDetails).kind : undefined;
 		state.compactOnly = (kind === "manual" || kind === "last") && !state.working;
 	});
 	pi.on("agent_end", () => {
@@ -217,22 +219,24 @@ export function trackRun(pi: ExtensionAPI, state: FoldState): void {
 
 /** MODEL-FACING-TEXT.md §5, the short-summary row. Exact counts, and characters beside tokens: Pi's
  * estimate is a quarter of the characters, and characters are what the model can judge as it
- * writes. One line per span that fell short; the ones that did not are not named. */
-export function tooShort(short: { from: string; to: string; before: number; after: number }[]): string {
+ * writes. Every span of the call gets a line, the long enough ones too: named only the short one,
+ * a live replay resent only that span, and the other 230K of its fold never landed. */
+export function tooShort(spans: { from: string; to: string; before: number; after: number }[]): string {
 	const n = (value: number) => value.toLocaleString("en-US");
-	const lines = short.map(({ from, to, before, after }) => {
+	const lines = spans.map(({ from, to, before, after }) => {
 		const least = Math.ceil(before * SUMMARY_FLOOR);
 		const aim = Math.round(before * SUMMARY_TARGET);
 		const share = ((after / before) * 100).toFixed(1);
-		return (
-			`- ${from}–${to}: ${n(after)} tokens for ${n(before)} (${share}%). ` +
-			`Write at least ${n(least)} tokens (${n(least * 4)} characters), aim for ${n(aim)}.`
-		);
+		const verdict =
+			after < least
+				? `Write at least ${n(least)} tokens (${n(least * 4)} characters), aim for ${n(aim)}.`
+				: "Long enough: send it again unchanged.";
+		return `- ${from}–${to}: ${n(after)} tokens for ${n(before)} (${share}%). ${verdict}`;
 	});
 	return [
-		`Nothing was compacted: a summary must be at least ${Math.round(SUMMARY_FLOOR * 100)}% of the tokens it replaces.`,
+		"Nothing was compacted: a summary must be at least 3% of the tokens it replaces.",
 		...lines,
-		"Call compact again with the same spans and longer summaries.",
+		"Nothing was saved. Send every span listed here again, in one call.",
 	].join("\n");
 }
 
@@ -311,6 +315,10 @@ function plan(slots: Slot[], fold: Fold, id: string, toolCallId: string, session
 			(slot.entryId !== undefined && covered.has(slot.entryId)) ||
 			(slot.block !== undefined && absorbed.has(slot.block.id)),
 	);
+	// The user's words, in the order they stood: an absorbed block brings the ones it already kept.
+	const quotes = taken.flatMap((slot) =>
+		slot.block !== undefined ? (slot.block.quotes ?? []) : typedText(slot.message),
+	);
 	return {
 		fold,
 		taken: taken.map((slot) => slot.message),
@@ -324,11 +332,12 @@ function plan(slots: Slot[], fold: Fold, id: string, toolCallId: string, session
 			tokensBefore: taken.reduce((sum, slot) => sum + estimateTokens(slot.message), 0),
 			tokensAfter: estimateTokens({
 				role: "user",
-				content: [{ type: "text", text: fold.summary }],
+				content: [{ type: "text", text: summaryBody(fold.summary, quotes) }],
 				timestamp: 0,
 			}),
 			originalPath: originalPath(sessionId, id),
 			timestamp: Date.now(),
+			quotes,
 		},
 	};
 }

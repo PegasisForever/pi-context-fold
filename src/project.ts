@@ -108,7 +108,7 @@ export function receiptText(blocks: FoldBlock[]): string {
 		);
 	}
 	// One call writes every block into the same session folder.
-	const folder = dirname(blocks[0]?.originalPath ?? "");
+	const folder = dirname(blocks[0]!.originalPath);
 	const msgs = blocks.reduce((sum, block) => sum + block.msgs, 0);
 	return [
 		`You just compacted ${count(msgs)} messages into ${blocks.length} blocks. Full transcripts are saved in \`${folder}/\`:`,
@@ -152,9 +152,29 @@ export function summaryMessage(block: FoldBlock): Msg {
 	const open = `<summary full-transcript="${block.originalPath}">`;
 	return {
 		role: "user",
-		content: [{ type: "text", text: `${open}\n${block.summary}\n</summary>` }],
+		content: [
+			{ type: "text", text: `${open}\n${summaryBody(block.summary, block.quotes ?? [])}\n</summary>` },
+		],
 		timestamp: block.timestamp,
 	};
+}
+
+/** The model's summary, then the user's own messages under it, each in a tag of its own. Asked to
+ * keep them verbatim, one model kept 36 of 200 (§3a); code keeps all of them. */
+export function summaryBody(summary: string, quotes: string[]): string {
+	if (quotes.length === 0) return summary;
+	return [summary, "", ...quotes.map((quote) => `<user-message>${quote}</user-message>`)].join("\n");
+}
+
+/** What the user sent in one message, word for word, for `quotes`: its text parts. A message with no
+ * text gives nothing. */
+export function typedText(message: Msg): string[] {
+	if (message.role !== "user") return [];
+	const text =
+		typeof message.content === "string"
+			? message.content
+			: message.content.flatMap((part) => (part.type === "text" ? [part.text] : [])).join("\n");
+	return text === "" ? [] : [text];
 }
 
 /**

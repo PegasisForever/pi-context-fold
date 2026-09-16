@@ -29,4 +29,8 @@ export interface FoldBlock {
 	tokensAfter: number;
 	originalPath: string;
 	timestamp: number;
+	/** The user's messages in the span, word for word, in view order — an absorbed block's first, where
+	 * its summary stood. Shown under the summary (MODEL-FACING-TEXT.md §6). Absent on records written
+	 * before it existed. */
+	quotes?: string[];
 }

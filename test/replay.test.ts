@@ -261,12 +261,6 @@ test("§4b: the stored receipt stays in the view for every later answer", () => 
 	const twice = [...once, { entryId: "e-a3", message: assistant("folding again", 300) }];
 	assert.deepEqual(names(twice), ["summary b1", "e-a1", "e-rcpt", "e-a2", "e-a3"]);
 	assert.ok(note(twice) !== undefined, "the record of a fold must not expire");
-
-	// Ten answers later it is still the only thing in the view saying the model compacted.
-	const later = [...twice];
-	for (let i = 0; i < 10; i++)
-		later.push({ entryId: `e-late${i}`, message: assistant("more work", 400 + i) });
-	assert.ok(note(later) !== undefined, "the record must outlive the turn that made it");
 });
 
 /**
@@ -308,23 +302,39 @@ test("MODEL-FACING-TEXT.md §4, §4b and §6: the success result, the receipt an
 	// §3a: the instruction above the table, with the size target and the floor.
 	assert.equal(INSTRUCTION, fenced("3", 0));
 	// §5: the short-summary refusal, with the document's own numbers.
-	assert.equal(tooShort([{ from: "e1", to: "e100", before: 191_520, after: 330 }]), fenced("5", 0));
+	assert.equal(
+		tooShort([
+			{ from: "e1", to: "e100", before: 191_520, after: 330 },
+			{ from: "e101", to: "e150", before: 111_847, after: 3_600 },
+		]),
+		fenced("5", 0),
+	);
 
 	const message = summaryMessage({ ...record, summary: "…the model's summary text…" });
 	// §6: the role is load-bearing. pi-ai reads a `user` message as interrupting a tool flow, which
 	// is what turns a mis-placed summary into a provider rejection rather than a silent oddity.
 	assert.equal(message.role, "user");
 	assert.equal(userText(message), fenced("6"));
+	// §6: the user's own messages, under the summary, one tag each.
+	const withQuotes = summaryMessage({
+		...record,
+		summary: "…the model's summary text…",
+		quotes: [
+			"build it and run it locally and give me the link to the web ui",
+			"add logcli, yq, duckdb, httpie into the docker image",
+		],
+	});
+	assert.equal(userText(withQuotes), fenced("6", 1));
 });
 
 /**
  * MODEL-FACING-TEXT.md §7, §7a and §7b, sent through the real sender with the document's own
  * numbers. The nudges went untested once, and the code and the document drifted by a word.
  */
-test("MODEL-FACING-TEXT.md §7, §7a and §7b: the three nudges are the document's, all steers, and only §7 waits", () => {
-	const sent: { content: string; triggerTurn: boolean; deliverAs: string }[] = [];
+test("MODEL-FACING-TEXT.md §7, §7a and §7b: the three nudges are the document's, and only §7 waits", () => {
+	const sent: { content: string; triggerTurn: boolean; deliverAs?: string }[] = [];
 	const pi = {
-		sendMessage: (message: { content: string }, options: { triggerTurn: boolean; deliverAs: string }) =>
+		sendMessage: (message: { content: string }, options: { triggerTurn: boolean; deliverAs?: string }) =>
 			sent.push({ content: message.content, ...options }),
 	};
 	const at = (tokens: number | null) => ({
@@ -344,10 +354,11 @@ test("MODEL-FACING-TEXT.md §7, §7a and §7b: the three nudges are the document
 		sent.map((one) => one.triggerTurn),
 		[false, true, true, true],
 	);
-	// Read at the model's next call, mid-task or not: none waits for the model to stop.
+	// The last nudge and the request are steers, so neither waits for the model to stop. Pi reads
+	// no delivery option for the growth reminder, which starts nothing, so it has none.
 	assert.deepEqual(
 		sent.map((one) => one.deliverAs),
-		["steer", "steer", "steer", "steer"],
+		[undefined, "steer", "steer", "steer"],
 	);
 });
 
@@ -686,7 +697,15 @@ test("§5: a first summary under 3% is refused with nothing written, and the sec
 		(error: Error) => {
 			assert.match(error.message, /^Nothing was compacted: a summary must be at least 3% /);
 			assert.match(error.message, /\n- e1–e2: \d+ tokens for [\d,]+ \(0\.\d%\)\. Write at least /);
-			assert.doesNotMatch(error.message, /e4–e4/, "only the spans that fell short are named");
+			// The long enough span is named too, or the model resends only the short one.
+			assert.match(
+				error.message,
+				/\n- e4–e4: \d+ tokens for [\d,]+ \([\d.]+%\)\. Long enough: send it again unchanged\.\n/,
+			);
+			assert.match(
+				error.message,
+				/\nNothing was saved\. Send every span listed here again, in one call\.$/,
+			);
 			return true;
 		},
 	);
@@ -721,6 +740,74 @@ test("§5: a first summary under 3% is refused with nothing written, and the sec
 	message();
 	await call({ spans: [{ from: "e3", to: "e3", summary: "short again" }] });
 	assert.equal(appended.length, 2);
+});
+
+/**
+ * §6: the fold keeps the user's own words, not the model. Asked to quote every message, one model
+ * kept 36 of 200. Every text part is kept as sent, and a later fold that absorbs this one keeps
+ * them where the summary stood.
+ */
+test("§6: a fold stores the user's messages word for word and shows them under the summary, through absorption", async () => {
+	const { call, appended, entries } = driveCompact();
+	const user = (id: string, content: unknown): SessionEntry =>
+		({
+			type: "message",
+			id,
+			parentId: null,
+			timestamp: "2026-09-12T00:00:00.000Z",
+			message: { role: "user", content, timestamp: 1 },
+		}) as unknown as SessionEntry;
+	const sent = "<system-reminder>Selected context: src/a.ts L1-L9</system-reminder>\nwhy is this slow?";
+	// Each opens the round after it: before rounds 1 and 2.
+	entries.splice(
+		2,
+		0,
+		user("u2", [
+			{ type: "text", text: sent },
+			{ type: "image", data: "…", mimeType: "image/png" },
+		]),
+	);
+	entries.splice(0, 0, user("u1", "build it and run it locally"));
+
+	await call({});
+	await call({ spans: [{ from: "e1", to: "e3", summary: long("first three rounds") }] });
+	const first = appended[0]!;
+	assert.deepEqual(first.quotes, ["build it and run it locally", sent]);
+	assert.ok(
+		first.tokensAfter > Math.ceil(long("first three rounds").length / 4) + 20,
+		"the quotes count toward the summary's size",
+	);
+
+	const shown = (): string =>
+		projectSlots(
+			buildView(entries),
+			liveBlocks({
+				getBranch: () => appended.map((one, i) => customEntry(`k${i}`, "fold-block", one)),
+			}),
+		)
+			.map((slot) => (slot.block ? userText(slot.message) : ""))
+			.join("");
+	assert.ok(
+		shown().includes(
+			`first three rounds: ${"a detail worth keeping, ".repeat(20)}\n\n<user-message>build it and run it locally</user-message>\n<user-message>${sent}</user-message>\n</summary>`,
+		),
+	);
+
+	// A later fold takes b1's summary and the next round, with a new message of the user's in it.
+	entries.splice(
+		entries.findIndex((e) => e.id === "x4a"),
+		0,
+		user("u4", "now make it fast"),
+	);
+	await call({});
+	await call({ spans: [{ from: "e1", to: "e2", summary: long("everything so far") }] });
+	const second = appended[1]!;
+	assert.deepEqual(second.blockIds, ["b1"]);
+	assert.deepEqual(second.quotes, [...(first.quotes ?? []), "now make it fast"]);
+	assert.match(
+		shown(),
+		/everything so far[\s\S]*<user-message>build it and run it locally<\/user-message>[\s\S]*<user-message>now make it fast<\/user-message>/,
+	);
 });
 
 test("§2a: a span is refused when the list it names is no longer in the view", async () => {

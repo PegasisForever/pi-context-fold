@@ -176,7 +176,7 @@ To compact one entry, set from and to to the same id.
 <how-to-summarize>
 You and only you will be the reader of the summary.
 Carry the conclusions you would otherwise have to derive again, and say enough about the rest to know when the full transcript file is worth opening.
-The intent, corrections, etc from the user must be fully preserved in the summary.
+The user's messages in the span are attached under your summary word for word, so do not repeat them.
 Keep a summary of what you did in response to the user messages.
 Keep verbatim for these because they are the search keys into the transcript file: full paths, identifiers and signatures, error strings, versions, numbers, thresholds, etc.
 Keep what each piece of work was trying to settle, each decision with the reason for it, each dead end with what killed it, and every question left open.
@@ -196,7 +196,14 @@ gives characters as well as tokens, because characters are what the model can ju
 writes, and Pi's estimate is a quarter of them. The floor is stated here so the refusal (§5) is
 never a surprise.
 
-**367 tokens**, measured with Pi's own `estimateTokens`, up from 337 for the size line. Compare the prior
+**Your messages are kept word for word, by code.** The line used to ask for *"the intent,
+corrections, etc"* to be *"fully preserved"*, and the model preserved them as a clause: 61 of
+your messages, 14,802 characters, became *"per user override"* inside a 1,336-character summary.
+Asked instead to keep every one verbatim, it kept 36 of 200 across three replays of that
+session. So the fold attaches them itself, under the summary (§6), and this line only tells the
+model they are there, so it does not spend its summary repeating them.
+
+**372 tokens**, measured with Pi's own `estimateTokens`, up from 337 for the size and quote lines. Compare the prior
 art: `billion-context-pi`'s system prompt is **3,704 tokens in every request**, and its
 nudge adds 1,366 of which 1,179 duplicate the system prompt verbatim.
 
@@ -267,7 +274,7 @@ message, so the session held two rounds, H1 excluded both, and the table came ba
 Nothing is compactable yet, try again when the conversation is longer.
 ```
 
-No table, no example, **and no §3a instruction**: 367 tokens of guidance on choosing a span
+No table, no example, **and no §3a instruction**: 372 tokens of guidance on choosing a span
 is waste when there is no span to choose (P1), and the paragraph alone reads as a complete
 answer. An example naming ids that do not exist is what caused the model to fold `e2–e3` in
 that run (C8 — the failure was our information, not the model).
@@ -377,13 +384,24 @@ Each names the id and the next action (P3).
 | A summary under 3% | see below |
 
 A summary under 3% of the tokens it replaces refuses the whole call, before anything is
-written. One line per span that fell short, with exact counts:
+written. One line for every span in the call, with exact counts, and the ones already long
+enough say so:
 
 ```
 Nothing was compacted: a summary must be at least 3% of the tokens it replaces.
 - e1–e100: 330 tokens for 191,520 (0.2%). Write at least 5,746 tokens (22,984 characters), aim for 9,576.
-Call compact again with the same spans and longer summaries.
+- e101–e150: 3,600 tokens for 111,847 (3.2%). Long enough: send it again unchanged.
+Nothing was saved. Send every span listed here again, in one call.
 ```
+
+The long enough spans are named because a refusal that named only the short one was answered
+with that one alone: replayed live, the model resent the single short span of three, it landed
+as the second try, and the other 230K of the fold never did. Their line says to send them again,
+and the last line says nothing was saved, because the first wording — *"Long enough, keep it"* —
+was read as "leave it out": in three of four replays the retry dropped a span, 27K to 73K of the
+fold.
+
+The count includes the user's messages the fold attaches (§6).
 
 The list those ids came from stays current for the retry. A refused fold changes nothing, and
 without that the retry would be refused as stale and cost a second 5K menu to resend the same
@@ -423,6 +441,24 @@ Replaces the folded span, permanently, in every later request.
 …the model's summary text…
 </summary>
 ```
+
+When the span held messages from the user, they follow the summary, word for word, one tag
+each, in the order they were sent:
+
+```
+<summary full-transcript="~/.pi/agent/context-fold/01a094/b5.txt">
+…the model's summary text…
+
+<user-message>build it and run it locally and give me the link to the web ui</user-message>
+<user-message>add logcli, yq, duckdb, httpie into the docker image</user-message>
+</summary>
+```
+
+**They are the user's words, not the model's, so code puts them there.** A summary is lossy by
+design, and what the user asked for is the one thing it must not lose: asked to quote them, one
+model kept 36 of 200 (§3a). The fold record stores them, so they survive in the view whatever the
+model writes. A later fold that absorbs this block carries them into its own record, where this
+summary stood. Each message is its text parts as sent; about 8 tokens of tag per message.
 
 **The role is `user`, and that is load-bearing.** `convertToLlm` maps `custom` to a `user`
 message with no wrapper, so the two are identical on the wire — but pi-ai's transform treats
@@ -483,7 +519,7 @@ drift from the number that produces it — including when it is not 200K.
 A nudge needs 200K of growth to fire, so once the window has less than that left, no second
 nudge can arrive before the overflow cut. That one is a warning, and it says so. It is the
 only nudge that starts a turn of its own, because there may be no ordinary turn left in which
-to act on it. Like every nudge it is a steer: sent mid-task, the model reads it at its very next
+to act on it. It is a steer: sent mid-task, the model reads it at its very next
 call, folds, and goes on with your work; sent on the final answer, it keeps the run going for the
 fold alone, and that run ends when the fold lands (§7b).
 
@@ -643,14 +679,14 @@ Last reminder before the context runs out.
 |---|---|
 | **Every request** (system prompt + one tool schema) | **343** (158 + 185) |
 | Per nudge | 165, or 123 for the last one and for `/compact` |
-| Per menu | ~5,300 (367 of it instruction) |
+| Per menu | ~5,300 (372 of it instruction) |
 | Per fold | ~48 receipt (+~10 per further block in the call) + ~15 permanent prefix |
 
 The original, **measured** rather than estimated: **3,704 tokens of system prompt in every
 request**, plus four tool schemas, plus a ref tag on every message in context, plus 1,366
 tokens per nudge of which 1,179 repeat the system prompt verbatim.
 
-Ours: **343 tokens per request**, and the 367-token instruction is paid only on the turns
+Ours: **343 tokens per request**, and the 372-token instruction is paid only on the turns
 where a fold actually happens.
 
 ---
