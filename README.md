@@ -27,7 +27,7 @@ different instruction from every other harness, and the reason this one can be s
 
 - **Almost nothing to see.** No command, no on/off switch. One footer line, and one row
   per fold. It manages itself.
-- When context has grown by 200K tokens, a 160-token nudge is added to the conversation. It
+- When context has grown by 200K tokens, a 165-token nudge is added to the conversation. It
   reports the pressure and says what is worth folding; the model decides. Nothing is required
   of it, and it does not interrupt what you are doing.
 - Once there is no room left for another nudge, the last one says so and asks for the fold.
@@ -39,8 +39,8 @@ different instruction from every other harness, and the reason this one can be s
   spans leave the view, each replaced by `<summary full-transcript="…/b5.txt">`.
 - The original goes to `~/.pi/agent/context-fold/<session>/b5.txt`. The model is told in its
   system prompt to search that folder before asking you to repeat something — and it does.
-- `/compact` does not run pi's compaction. It sends the model the same neutral nudge, with a
-  turn of its own, so pressing it means "now would be a good time" and the model decides.
+- `/compact` does not run pi's compaction. It tells the model that you asked for a compaction,
+  with a turn of its own, and the model chooses what to compact and writes the summaries.
 - On a context overflow, the older half is cut mechanically and written to a file. No second
   model call, no summarisation that could fail.
 

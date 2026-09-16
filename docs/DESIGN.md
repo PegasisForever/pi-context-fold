@@ -409,7 +409,7 @@ After a **successful** fold:
   never chained, so removing them is safe.
 - **Also remove the menu call and its ~5K result**, same rules.
 - **Send a standing receipt per landed block** (MODEL-FACING-TEXT.md §4b). The fold's own result
-  is seen once mid-turn and leaves with its call, so without this the next choice happens with no
+  leaves with its call before the model's next request, so without this the next choice happens with no
   record of what just landed — the live 560d loop folded three times on a standing user order with
   fresh menus (187, 65, 20 entries) because nothing said what was done or when to stop. A stored
   entry: an entry in the log and the TUI, so installed can be told apart from sent. The derived
@@ -419,8 +419,9 @@ After a **successful** fold:
   note left the view, so any turn that did a little work reached its next fold decision with no
   record again — the same failure one step later, for 40 tokens saved. Only a later fold that
   covers the entry takes it out, into that fold's transcript like any other message. Carries the
-  numbers and the stop rule; no span ids, which would rot with the menu that issued them. Partial
-  reversal of 19.27 on live evidence.
+  numbers, *"carry on with the user's work"* and the transcript path; no span ids, which would rot with the menu that
+  issued them. **The tool result is the same text, from the same function** (`receiptText`), so the
+  two cannot drift apart. Partial reversal of 19.27 on live evidence.
 - The summary message is wrapped in `<summary full-transcript="…/b5.txt">`. That follows Pi's
   own convention for system-authored context — it wraps its compaction and branch summaries
   the same way (`messages.js:7-17`) — so the model needs no sentence explaining that the text
@@ -555,8 +556,8 @@ model is sent changes (C6).
 There is no benefit floor. The model decides whether a fold is worth making; we only decide
 when to ask.
 
-**The nudge is 160 tokens, and it is a report, not an order.** It states the pressure and
-hands the decision back, in as many words: *"You do not have to compact after this message."*
+**The nudge is 165 tokens, and it is a report, not an order.** It states the pressure and
+hands the decision back, in as many words: *"If nothing qualifies, carry on with the work."*
 That is the same rule as the paragraph above — the model decides whether a fold is worth
 making — applied to the text instead of only to the code. A nudge that demands a fold gets one
 whether or not anything is finished, and a summary written over live work costs more than it
@@ -600,7 +601,7 @@ interface CompactionResult { summary: string; firstKeptEntryId: string;
 ```
 
 - `reason: "threshold"` → `{cancel: true}`. We manage ordinary pressure.
-- `reason: "manual"` → `{cancel: true}`, **and send the ordinary nudge with a turn of its own**.
+- `reason: "manual"` → `{cancel: true}`, **and send the `/compact` request with a turn of its own**.
 - `reason: "overflow"` → supply our own compaction. Never cancel.
 
 **`/compact` is answered, not obeyed.** Pi's command list is a fixed array in its own source
@@ -608,10 +609,12 @@ interface CompactionResult { summary: string; firstKeptEntryId: string;
 clash itself and demotes the extension's command
 (`getBuiltInCommandConflictDiagnostics`). So the key stays, and what it does is ours to choose.
 It used to fall into the mechanical cut below, which means typing `/compact` out of habit threw
-half the session out of view with no summary. It now cancels Pi's compaction and asks the model,
-in the ordinary nudge's own words, to compact itself. The nudge is the neutral one: pressing the
-key says *now would be a good time*, not *there is an emergency*. It is sent with
-`triggerTurn: true`, because you pressed a key and something has to happen (§17, row 19.73).
+half the session out of view with no summary. It now cancels Pi's compaction and tells the model
+that you asked for a compaction, and the model chooses the range and writes the summaries. It is
+its own message, not the ordinary nudge: the nudge is about growth and says the model may decline,
+and pressing the key is neither. It is not the last nudge either — pressing the key says *now*,
+not *there is an emergency*. It is sent with `triggerTurn: true`, because you pressed a key and
+something has to happen (§17, rows 19.73 and 19.80).
 
 **No model call. The recovery is mechanical:**
 
@@ -688,13 +691,13 @@ smaller than the content it replaces, log it. The fold still happens.
 
 | File | Purpose | Lines |
 |---|---|---|
-| `fold.ts` | the one tool: the menu, the spans, the records, the receipt | 272 |
+| `fold.ts` | the one tool: the menu, the spans, the records, the receipt | 271 |
 | `menu.ts` | even-count partition, rendering | 178 |
-| `emergency.ts` | `session_before_compact`: `/compact`, and the overflow cut | 116 |
+| `emergency.ts` | `session_before_compact`: `/compact`, and the overflow cut | 117 |
 | `index.ts` | event wiring, tool registration | 122 |
-| `project.ts` | fold projection, block edit, pair removal, nudge retirement | 177 |
+| `project.ts` | fold projection, block edit, pair removal, nudge retirement, the fold text | 150 |
 | `dump.ts` | write the transcripts to the session cache dir | 86 |
-| `nudge.ts` | the nudge text, and the one place it is sent from | 64 |
+| `nudge.ts` | the three nudge texts, and the one place they are sent from | 88 |
 | `config.ts` | the one key, out of Pi's settings file | 65 |
 | `shown.ts` | the TUI components both readers' halves are drawn with | 41 |
 | `state.ts` | block records via `appendEntry`, read from `getBranch()` | 36 |
@@ -702,7 +705,7 @@ smaller than the content it replaces, log it. The fold still happens.
 | `status.ts` | `setStatus` line | 15 |
 | `view.ts` | build the view from entries | 14 |
 | `log.ts` | one JSON line writer | 13 |
-| **Total** | **1,232**, against a first estimate of ~830. | |
+| **Total** | **1,228**, against a first estimate of ~830. | |
 
 Against ~9,950 lines of source in the original.
 
@@ -710,10 +713,10 @@ Against ~9,950 lines of source in the original.
 
 ## 12. The test suite
 
-**Nine tests, 521 lines.** They build their own fixtures and depend on nothing outside the
+**Ten tests, 574 lines.** They build their own fixtures and depend on nothing outside the
 repository: block records read back from the branch and absorbed correctly, the status line,
-the two model-facing strings §4 and §6 read out of `docs/MODEL-FACING-TEXT.md` rather than
-copied, the one token format, and two that drive the real tool through a stub session — one
+the model-facing strings §4, §4b, §6, §7, §7a and §7b read out of `docs/MODEL-FACING-TEXT.md`
+rather than copied, the one token format, and two that drive the real tool through a stub session — one
 for the three defects the list of spans must not bring back, one for a list of ids that is no
 longer current (§6).
 
@@ -873,7 +876,7 @@ that runs.
 | A fold that would replace nothing is refused | the stale-menu case, reproduced and tested |
 | Blocks absorb correctly | chains of three, already-absorbed ids, entries already gone |
 | Replay is deterministic | same log twice, identical state |
-| Model-facing strings match this project's contract | §4 and §6 are still read from `docs/MODEL-FACING-TEXT.md` on every run, not copied; §1, §2, §3a, §3b, §5, §7, §8 and §9 were checked the same way by the deleted tests |
+| Model-facing strings match this project's contract | §4, §4b, §6, §7, §7a and §7b are read from `docs/MODEL-FACING-TEXT.md` on every run, not copied; §1, §2, §3a, §3b, §5, §8 and §9 were checked the same way by the deleted tests |
 
 Across seven audit rounds, roughly **250 mutations** were run against the tree; the
 survivors are listed in §17 and each is either equivalent or now covered.
@@ -982,6 +985,8 @@ fires at a sensible moment.
 | 19.50 | "menu tokens are excluded from the growth measurement" | they are not; the menu result just leaves the view next round | the arithmetic was wrong (20K, not 200K) and Pi's single number has nothing to subtract from |
 | 19.51 | A "hold the summary until no call is pending" condition | complete the closure's transitivity instead | the mid-round case becomes unrepresentable rather than handled — C4 |
 | 19.52 | "excluding compaction entries makes coverage contiguous" | it does not; coverage can split regardless | a span with no compaction entry, contiguous when folded, splits when a newer compaction hoists past an older one |
+| 19.80 | `/compact` sends the ordinary nudge, §7 word for word; the three nudge texts written out separately; §7 untested | `/compact` sends its own request (§7b); the three texts share their sentences as constants, and the system prompt shares *"the compacted range and the summary are yours to decide"*; §7, §7a and §7b are read from the document by the suite | a key you pressed is not a growth reminder, and telling the model it may decline answers a question you did not ask; the untested nudge had already drifted from the document by a word (*see fit* against *seem suitable*) |
+| 19.79 | Tool result and receipt written by two functions (`resultLine` with span ids and "messages replaced"; `receiptText` with the stop rule) | one function, `receiptText`, for both: numbers, stop rule, path last | two texts for one event drift apart, and the result never reaches a request anyway — it leaves with its call before the next one — so the only copy the model reads is the receipt, which now also carries the path that outlives an absorbed summary |
 | 19.78 | The receipt leaves the view after one round-trip (two newer assistants) | it stays until a later fold covers it | the note is the only record that the model compacted, and an expiring record just moves the 560d loop one turn later — any post-fold turn with two model calls in it reaches the next decision empty-handed again; 40 tokens per block is not a reason |
 | 19.77 | Receipt derived in the projection (§4b as first built) | stored receipt entry, retired from the view after one round-trip, plus a load-commit log line | live: the first session with the derived note showed no telling message, and projection-only cannot be told apart from never-sent — and installed-latest never implies running-latest, which the load line now says aloud |
 | 19.76 | No post-fold note (19.27); result seen once mid-turn | derived one-round receipt (§4b) with numbers and stop rule, no span ids | live 560d loop: three folds on a standing order with fresh menus, result-once was not enough; ephemeral and unpaired, so 19.27's reason stands |

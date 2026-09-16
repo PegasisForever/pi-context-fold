@@ -114,24 +114,24 @@ export function registerFold(pi: ExtensionAPI, state: FoldState): void {
 			applyAll(pi, planned);
 			state.menu = undefined;
 			state.folded = true;
-			// One stored note per landed block (§4b): an entry in the log and the TUI like every
-			// other extension message, retired from the view after one round-trip. Only fully
-			// applied folds get one — applyAll throws before this on a partial failure.
-			for (const { record } of planned) {
+			// One text per landed block (§4, §4b), said twice: in the result, which leaves the view
+			// with its call on the very next request, and in a stored note, an entry in the log and
+			// the TUI like every other extension message, which stays in the view. Only fully applied
+			// folds get one — applyAll throws before this on a partial failure.
+			const texts = planned.map(({ record }) => receiptText(record));
+			for (const text of texts) {
 				pi.sendMessage<Shown>(
 					{
 						customType: RECEIPT_CUSTOM_TYPE,
-						content: `<${NUDGE_CUSTOM_TYPE}>\n${receiptText(record)}\n</${NUDGE_CUSTOM_TYPE}>`,
-						details: { lines: [receiptText(record)] },
+						content: `<${NUDGE_CUSTOM_TYPE}>\n${text}\n</${NUDGE_CUSTOM_TYPE}>`,
+						details: { lines: [text] },
 						display: true,
 					},
 					{ deliverAs: "followUp", triggerTurn: false },
 				);
 			}
 			return {
-				content: [
-					{ type: "text", text: planned.map((one) => resultLine(one.record, one.fold)).join("\n") },
-				],
+				content: [{ type: "text", text: texts.join("\n") }],
 				details: { lines: planned.map((one) => foldForYou(one.record, one.fold)) },
 			};
 		},
@@ -243,15 +243,6 @@ function plan(slots: Slot[], fold: Fold, id: string, toolCallId: string, session
 			timestamp: Date.now(),
 		},
 	};
-}
-
-/** MODEL-FACING-TEXT.md §4: the block id, the real span, and the path. One line per span. */
-export function resultLine(record: FoldBlock, fold: { from: string; to: string }): string {
-	return (
-		`Compacted ${fold.from}–${fold.to} into ${record.id}. ` +
-		`${shortTokens(record.tokensBefore)} → ${shortTokens(record.tokensAfter)}, ${record.msgs} messages replaced. ` +
-		`Transcript: ${record.originalPath}`
-	);
 }
 
 /** The same fold, for a person: no path, because /jobs-style detail is not what you are watching for. */

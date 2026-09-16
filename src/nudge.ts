@@ -13,14 +13,18 @@ export { NAME };
 export const NUDGE_GROWTH_TOKENS = 200_000;
 
 /**
+ * MODEL-FACING-TEXT.md §7. `growth` is the ordinary reminder, which waits for the next turn; `last`
+ * is §7a, the one sent when no second reminder can fire; `manual` is §7b, the answer to `/compact`.
+ * The last two start a turn of their own: something has to happen before the window fills, or
+ * because you pressed a key.
+ */
+export type NudgeKind = "growth" | "last" | "manual";
+
+/**
  * The one place a nudge is sent from: the growth clock (§8) and `/compact` (§7b) both arrive here.
  * When to send, and what the growth clock does afterwards, is the caller's business.
  */
-export function sendNudge(
-	pi: ExtensionAPI,
-	ctx: ExtensionContext,
-	options: { last: boolean; trigger: boolean; growth: number },
-): void {
+export function sendNudge(pi: ExtensionAPI, ctx: ExtensionContext, kind: NudgeKind, growth: number): void {
 	const usage = ctx.getContextUsage();
 	// `null` right after a compaction, `undefined` with no model. Pi is honest about not knowing and
 	// we inherit the honesty: the sentence is dropped rather than filled with a second meter (§7).
@@ -28,37 +32,57 @@ export function sendNudge(
 		usage === undefined || usage.tokens === null
 			? undefined
 			: `${shortTokens(usage.tokens)} of ${shortTokens(usage.contextWindow)} context used.`;
-	const body = options.last ? LAST_NUDGE : nudgeBody(options.growth);
-	const lines = options.last ? ["Last reminder before the context runs out."] : [];
+	const lines = kind === "last" ? ["Last reminder before the context runs out."] : [];
 	pi.sendMessage<Shown>(
 		{
 			customType: NAME,
-			content: `<${NAME}>\n${[REMINDER, used, body].filter(Boolean).join(" ")}\n</${NAME}>`,
+			content: `<${NAME}>\n${nudgeText(kind, used, growth)}\n</${NAME}>`,
 			details: { lines: used === undefined ? lines : [used, ...lines] },
 			display: true,
 		},
-		{ deliverAs: "followUp", triggerTurn: options.trigger },
+		{ deliverAs: "followUp", triggerTurn: kind !== "growth" },
 	);
 }
 
-/** MODEL-FACING-TEXT.md §7. The first sentence of every nudge, before the two that differ. */
+/** MODEL-FACING-TEXT.md §7, §7a and §7b, between the tags. The three share their sentences, so a
+ * change to one wording is a change to every message that says it. `used` is left out when Pi does
+ * not know the context size; §7b never states it, because the user asked and the number is not
+ * what the request is about. */
+export function nudgeText(kind: NudgeKind, used: string | undefined, growth: number): string {
+	const how = `\`compact()\` with no arguments to list the spans and the summary writing instructions, then choose the span to compact.`;
+	const reminder = (next: string) => [REMINDER, used, next].filter(Boolean).join(" ");
+	switch (kind) {
+		case "growth":
+			return [
+				reminder(`You will be reminded again after another ${shortTokens(growth)} of growth.`),
+				`${WHY}\nCompact if there is a large chunk of finished work in the way: ${FINISHED} If nothing qualifies, carry on with the work.`,
+				`To compact, call ${how}`,
+			].join("\n\n");
+		case "last":
+			return [
+				reminder("This is the last reminder before this session runs out of context."),
+				`Compact large chunks of finished work: ${FINISHED}`,
+				`Compact as soon as possible. Call ${how}`,
+			].join("\n\n");
+		case "manual":
+			return [
+				`The user has requested you to perform a compaction. ${WHY}`,
+				`Compact large chunks of finished work: ${FINISHED}`,
+				`To compact, call ${how}`,
+			].join("\n\n");
+	}
+}
+
+/** MODEL-FACING-TEXT.md §7. The first sentence of both reminders. */
 const REMINDER = "This is a reminder that you handle the context compaction yourself.";
 
-/**
- * MODEL-FACING-TEXT.md §7. A report, not an order: it says what the pressure is and hands the
- * decision back. What it carries is what the model needs to decide *whether* to compact, which it
- * cannot get from the menu without paying 5.4K tokens for it first. The rules for picking the span
- * and writing the summary stay in the menu, where they are read at the moment they apply (§3a).
- */
-const nudgeBody = (
-	growth: number,
-) => `You will be reminded again after another ${shortTokens(growth)} of growth.
+/** MODEL-FACING-TEXT.md §1 and §7. Why compacting is worth it, and whose choice it is: said in the
+ * system prompt, and again wherever the model is asked to compact. */
+export const WHY =
+	"Compacting keeps the context lean which helps you to perform better. The compacted range and the summary are yours to decide.";
 
-You do not have to compact after this message, compact only if there is a large chunk of finished work in the way: exploration that led nowhere, tool output you have already used, a phase whose result is recorded. If nothing qualifies, carry on with the work.
-
-You can choose to compact at any time you see fit. To compact, call \`compact()\` with no arguments to list the spans and the summary writing instructions, then choose the span to compact.`;
-
-/** MODEL-FACING-TEXT.md §7a. The same reminder when no second one can fire, so it asks for the fold. */
-const LAST_NUDGE = `This is the last reminder before this session runs out of context.
-
-Compact as soon as possible. Call \`compact()\` with no arguments to list the spans and the summary writing instructions, then choose the span to compact.`;
+/** MODEL-FACING-TEXT.md §7. What counts as finished work, in every message that asks for a fold. The
+ * rules for picking the span and writing the summary stay in the menu, where they are read at the
+ * moment they apply (§3a). */
+const FINISHED =
+	"exploration that led nowhere, tool output you have already used, a phase whose result is recorded.";

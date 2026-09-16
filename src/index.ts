@@ -7,7 +7,7 @@ import { blocksDir } from "./dump.ts";
 import { registerEmergency } from "./emergency.ts";
 import { type FoldState, registerFold } from "./fold.ts";
 import { log } from "./log.ts";
-import { NAME, sendNudge } from "./nudge.ts";
+import { NAME, sendNudge, WHY } from "./nudge.ts";
 import { projectSlots, RECEIPT_CUSTOM_TYPE } from "./project.ts";
 import { labelled, type Shown } from "./shown.ts";
 import { liveBlocks } from "./state.ts";
@@ -109,7 +109,7 @@ function nudge(pi: ExtensionAPI, ctx: ExtensionContext, state: FoldState, config
 	// A turn of its own only for the last nudge, which has to be acted on before the next overflow.
 	// An ordinary nudge reports and waits: it is read at the start of the next turn either way, and
 	// waking the model to tell it that nothing is required costs a model call for nothing.
-	sendNudge(pi, ctx, { last, trigger: last, growth: step });
+	sendNudge(pi, ctx, last ? "last" : "growth", step);
 	state.baseline = predicted;
 	log("nudge", { predicted, growth, step, last });
 }
@@ -118,5 +118,5 @@ function nudge(pi: ExtensionAPI, ctx: ExtensionContext, state: FoldState, config
 function systemPrompt(sessionId: string): string {
 	return `### Context Management
 
-You manage your own context. When it grows large you will be notified to compact some of your context. Compacting replaces older parts of the conversation with summaries you write. Compacting keeps the context lean which helps you to perform better. The compacted range and the summary are yours to decide. \`compact()\` with no arguments lists what can be compacted. The transcript you have compacted is written to \`${blocksDir(sessionId)}/\` as plain text, one file per compaction. Search that directory when you encounter an ambiguity or have a question, the answer is usually already there.`;
+You manage your own context. When it grows large you will be notified to compact some of your context. Compacting replaces older parts of the conversation with summaries you write. ${WHY} \`compact()\` with no arguments lists what can be compacted. The transcript you have compacted is written to \`${blocksDir(sessionId)}/\` as plain text, one file per compaction. Search that directory when you encounter an ambiguity or have a question, the answer is usually already there.`;
 }

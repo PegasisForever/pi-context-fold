@@ -291,39 +291,45 @@ decision is actually made. Neither text is duplicated.
 
 ## 4. `compact(...)` → success
 
-> Compacted e1–e37 into b5. 412K → 3.1K, 38 messages replaced. Transcript:
-> `~/.pi/agent/context-fold/01a094/b5.txt`
+> You just compacted 38 messages into b5. 412K → 3.1K. Carry on with the user's work. Full transcript is saved at: `~/.pi/agent/context-fold/01a094/b5.txt`
 
-Carries the block id, the real span, and the path. Their issue #376 is exactly the first two
-missing: *"the compress result lacks new block ids and actual ref spans, so the model's
-block ledger drifts from the session."*
+One line per landed block, and the same text as the receipt (§4b), built by the same function
+(`receiptText`), so the result and the record can never disagree. Carries the block id, the
+numbers and the path. Their issue #376 was the block id missing: *"the compress result lacks new
+block ids and actual ref spans, so the model's block ledger drifts from the session."* The ref
+span is not repeated: the model named it in its own call, and the receipt that carries this text
+afterwards stays in the view for good, where a menu id would point at text the id no longer names.
 
-**≈ 50 tokens.** Seen once mid-turn; the call and its result leave the view at once (§6).
+**≈ 39 tokens, and never in a request.** The call and its result leave the view before the model's
+next request (DESIGN §6), so the model reads this text only through the receipt.
 
 ---
 
 ## 4b. Fold receipt — the standing record
 
-A fold's own result is seen once mid-turn and then leaves with its call, so the next choice
-would happen with no record of what just landed. The receipt keeps the numbers in view, and
-nothing retires it: it is the only thing in the context that says the model compacted, so it
-stays until a later fold covers the entry and carries it into that fold's transcript. The fold
-sends it as a stored entry: an entry in the log and the TUI, so installed can be told apart from
-sent and the log confirms what the view showed. A note that exists only in the projection cannot
-be told apart from a note that was never sent.
+A fold's own result leaves the view with its call before the model's next request, so without
+this the next choice would happen with no record of what just landed. The receipt keeps the
+numbers in view, and nothing retires it: it is the only thing in the context that says the model
+compacted, so it stays until a later fold covers the entry and carries it into that fold's
+transcript. The fold sends it as a stored entry: an entry in the log and the TUI, so installed can
+be told apart from sent and the log confirms what the view showed. A note that exists only in the
+projection cannot be told apart from a note that was never sent.
 
-No span ids: the menu that issued them is already stale or going, and reissued ids would point at
-new text. The id names the block whose summary stands directly above the note (its transcript
-path carries the same id). The last sentence is the stop rule, and it lives here and not in the
-menu because the choice it serves exists only on post-fold turns.
+The text is the tool result's, word for word (§4). No span ids: the menu that issued them is
+already stale or going, and reissued ids would point at new text. The id names the block whose
+summary sits above the note. *"Carry on with the user's work"* lives here and not in the menu
+because the choice it serves exists only on post-fold turns. The path goes last and in backticks —
+literally, the model reads them — so no punctuation can be read as part of it, and it outlives the
+summary: a later fold that absorbs this block takes the summary away,
+never the file.
 
 ```
 <pi-context-fold>
-Compacted 38 messages into b5. 412K → 3.1K. Only compact again if large finished work is left; otherwise carry on with the user's work.
+You just compacted 38 messages into b5. 412K → 3.1K. Carry on with the user's work. Full transcript is saved at: `~/.pi/agent/context-fold/01a094/b5.txt`
 </pi-context-fold>
 ```
 
-**≈ 40 tokens per landed block, held for the rest of the session; permanent in the log.**
+**≈ 48 tokens per landed block, held for the rest of the session; permanent in the log.**
 
 ---
 
@@ -402,21 +408,24 @@ than the tokens it saves.
 <pi-context-fold>
 This is a reminder that you handle the context compaction yourself. 640K of 1.0M context used. You will be reminded again after another 200K of growth.
 
-You do not have to compact after this message, compact only if there is a large chunk of finished work in the way: exploration that led nowhere, tool output you have already used, a phase whose result is recorded. If nothing qualifies, carry on with the work.
+Compacting keeps the context lean which helps you to perform better. The compacted range and the summary are yours to decide.
+Compact if there is a large chunk of finished work in the way: exploration that led nowhere, tool output you have already used, a phase whose result is recorded. If nothing qualifies, carry on with the work.
 
-You can choose to compact at any time you seem suitable. To compact, call `compact()` with no arguments to list the spans and the summary writing instructions, then choose the span to compact.
+To compact, call `compact()` with no arguments to list the spans and the summary writing instructions, then choose the span to compact.
 </pi-context-fold>
 ```
 
-**160 tokens**, measured, up from 43. The extra 117 buy the decision itself: without them the
+**165 tokens**, measured, up from 43. The extra 122 buy the decision itself: without them the
 model cannot tell whether compacting is worth a 5.4K menu call, and the cheapest way to find out
 is to make the call. It does **not** start a turn of its own — the model reads it at the start
 of its next turn either way, and waking the model to tell it that nothing is required spends a
 model call on nothing.
 
-*"You do not have to compact after this message"* is the one sentence that has to be there. Every
-other message this extension sends is something the model must act on, and a report that looks
-like those gets acted on too.
+*"If nothing qualifies, carry on with the work"* is the one sentence that has to be there. It is
+what keeps this a report: §7a and §7b are messages the model must act on, and a report that looks
+like those gets acted on too. *"The compacted range and the summary are yours to decide"* says the
+same thing from the other side, in the system prompt's words (§1) — one constant in the code, so
+the two cannot drift.
 
 The 200K figure is interpolated from the configured `nudgeGrowthTokens`, so the sentence cannot
 drift from the number that produces it — including when it is not 200K.
@@ -432,32 +441,42 @@ to act on it.
 <pi-context-fold>
 This is a reminder that you handle the context compaction yourself. 910K of 1.0M context used. This is the last reminder before this session runs out of context.
 
+Compact large chunks of finished work: exploration that led nowhere, tool output you have already used, a phase whose result is recorded.
+
 Compact as soon as possible. Call `compact()` with no arguments to list the spans and the summary writing instructions, then choose the span to compact.
 </pi-context-fold>
 ```
 
-**88 tokens**, measured — shorter than the ordinary nudge, because everything that helps the
-model decline is gone. What happens next, in full, is §8.
+**123 tokens**, measured — shorter than the ordinary nudge, because everything that helps the
+model decline is gone. It keeps what counts as finished work, the same list as §7, because an
+urgent fold is still a fold of finished work. What happens next, in full, is §8.
 
 ### 7b. `/compact`, the key we cannot delete
 
 Pi's own `/compact` cannot be removed by an extension and cannot be shadowed by one. So the key
-stays and we choose what it does: it cancels Pi's compaction and sends **the ordinary nudge**,
-§7 word for word, with a turn of its own.
+stays and we choose what it does: it cancels Pi's compaction and sends **a request of its own**,
+with a turn of its own.
 
-The ordinary one and not §7a's, deliberately. Pressing the key says *now would be a good time*,
-not *this session is about to run out*. The model still decides, and if nothing is finished it
-says so and carries on — the same answer it is allowed to give any other nudge.
+Not the ordinary nudge: that one is a reminder about growth and says the model may decline, and
+you pressing the key is neither. The request says who asked, and keeps the decision about *what*
+to compact with the model — the range and the summary are still its call. Not §7a either: that
+one says the session is about to run out, and pressing the key says nothing about that.
 
-The number sentence is dropped when Pi does not know the context size, which it does not
-immediately after a compaction. Nothing invents a second meter (P4):
+No reminder sentence and no size: the message is not about growth, and Pi does not know the
+context size immediately after a compaction anyway. Nothing invents a second meter (P4):
 
 ```
 <pi-context-fold>
-This is a reminder that you handle the context compaction yourself. You will be reminded again after another 200K of growth.
-…
+The user has requested you to perform a compaction. Compacting keeps the context lean which helps you to perform better. The compacted range and the summary are yours to decide.
+
+Compact large chunks of finished work: exploration that led nowhere, tool output you have already used, a phase whose result is recorded.
+
+To compact, call `compact()` with no arguments to list the spans and the summary writing instructions, then choose the span to compact.
 </pi-context-fold>
 ```
+
+**123 tokens**, measured. It shares its middle and last sentences with §7a and §7 — one
+constant each in the code.
 
 The prior art shows the cost of getting this wrong: `acp-kernel` ships its 1,179-token
 rules in the system prompt **and** again in full inside every nudge.
@@ -559,9 +578,9 @@ Last reminder before the context runs out.
 | | Tokens |
 |---|---|
 | **Every request** (system prompt + one tool schema) | **343** (158 + 185) |
-| Per nudge | 160, or 88 for the last one |
+| Per nudge | 165, or 123 for the last one and for `/compact` |
 | Per menu | ~5,300 (337 of it instruction) |
-| Per fold | ~50 result + ~15 permanent prefix |
+| Per fold | ~48 receipt + ~15 permanent prefix |
 
 The original, **measured** rather than estimated: **3,704 tokens of system prompt in every
 request**, plus four tool schemas, plus a ref tag on every message in context, plus 1,366

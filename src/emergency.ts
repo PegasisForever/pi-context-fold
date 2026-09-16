@@ -23,11 +23,11 @@ export function registerEmergency(pi: ExtensionAPI, config: Config): void {
 	pi.on("session_before_compact", (event, ctx) => {
 		if (event.reason === "threshold") return { cancel: true };
 		// `/compact` cannot be removed from Pi, so it is answered rather than obeyed (§7b). Pi's
-		// summariser is cancelled and the model is asked, in the ordinary nudge's words, to compact
-		// itself — with a turn of its own, because you pressed a key and expect something to happen.
+		// summariser is cancelled and the model is told that you asked it to compact, and decides
+		// what — with a turn of its own, because you pressed a key and expect something to happen.
 		// The mechanical cut is kept for "overflow", where there is no turn left to ask in.
 		if (event.reason === "manual") {
-			sendNudge(pi, ctx, { last: false, trigger: true, growth: config.nudgeGrowthTokens });
+			sendNudge(pi, ctx, "manual", config.nudgeGrowthTokens);
 			log("manual-compact", {});
 			return { cancel: true };
 		}

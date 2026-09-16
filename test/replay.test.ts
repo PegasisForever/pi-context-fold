@@ -4,7 +4,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 import type { SessionEntry } from "@earendil-works/pi-coding-agent";
-import { registerFold, resultLine } from "../src/fold.ts";
+import { registerFold } from "../src/fold.ts";
+import { NUDGE_GROWTH_TOKENS, sendNudge } from "../src/nudge.ts";
 import {
 	NUDGE_CUSTOM_TYPE,
 	projectSlots,
@@ -192,8 +193,8 @@ test("A1: a fold retires every nudge older than it, and keeps newer ones", () =>
 /**
  * §4b: the receipt is a stored entry, so the log can confirm what the view showed, and it never
  * leaves the view — only a later fold that covers it can take it out. The 560d loop folded three
- * times on a live user order with fresh menus because the result is seen once mid-turn and the
- * menu never says stopping is allowed; the receipt carries both the numbers and the stop rule to
+ * times on a live user order with fresh menus because the result leaves the view with its call
+ * before the next request and the menu never says stopping is allowed; the receipt carries both the numbers and the stop rule to
  * exactly that choice. A note that expires is a note the next choice can be made without, which
  * is the same failure one step later, so it does not expire.
  */
@@ -244,7 +245,7 @@ test("§4b: the stored receipt stays in the view for every later answer", () => 
 	assert.deepEqual(names(base), ["summary b1", "e-a1", "e-rcpt"]);
 	assert.match(
 		note(base) ?? "",
-		/<pi-context-fold>[\s\S]*Compacted 5 messages into b1\. 412K → 3\.1K\.[\s\S]*Only compact again[\s\S]*<\/pi-context-fold>/,
+		/<pi-context-fold>[\s\S]*You just compacted 5 messages into b1\. 412K → 3\.1K\.[\s\S]*Carry on with the user's work\.[\s\S]*<\/pi-context-fold>/,
 	);
 	assert.ok(!(note(base) ?? "").includes("e-u1"), "a receipt must not quote dead menu ids");
 
@@ -287,16 +288,47 @@ test("the status line is MODEL-FACING-TEXT.md §9's, and shows no context number
 	assert.equal(shown[0], `pi-context-fold|${fenced("9")}`);
 });
 
-/** MODEL-FACING-TEXT.md §4 and §6, built with the document's own example values so they compare whole. */
-test("MODEL-FACING-TEXT.md §4 and §6: the success result and the summary wrapper are the document's", () => {
+/** MODEL-FACING-TEXT.md §4, §4b and §6, built with the document's own example values so they compare whole. */
+test("MODEL-FACING-TEXT.md §4, §4b and §6: the success result, the receipt and the summary wrapper are the document's", () => {
 	const record = block({ id: "b5", msgs: 38, originalPath: "~/.pi/agent/context-fold/01a094/b5.txt" });
-	assert.equal(resultLine(record, { from: "e1", to: "e37" }), flat(quoted("4")).replace(/`/g, ""));
+	// The backticks are the model's, not markdown: §4b's fenced block shows them literally.
+	assert.equal(receiptText(record), flat(quoted("4")));
+	assert.equal(`<pi-context-fold>\n${receiptText(record)}\n</pi-context-fold>`, fenced("4b"));
 
 	const message = summaryMessage({ ...record, summary: "…the model's summary text…" });
 	// §6: the role is load-bearing. pi-ai reads a `user` message as interrupting a tool flow, which
 	// is what turns a mis-placed summary into a provider rejection rather than a silent oddity.
 	assert.equal(message.role, "user");
 	assert.equal(userText(message), fenced("6"));
+});
+
+/**
+ * MODEL-FACING-TEXT.md §7, §7a and §7b, sent through the real sender with the document's own
+ * numbers. The nudges went untested once, and the code and the document drifted by a word.
+ */
+test("MODEL-FACING-TEXT.md §7, §7a and §7b: the three nudges are the document's, and only §7 waits", () => {
+	const sent: { content: string; triggerTurn: boolean }[] = [];
+	const pi = {
+		sendMessage: (message: { content: string }, options: { triggerTurn: boolean }) =>
+			sent.push({ content: message.content, triggerTurn: options.triggerTurn }),
+	};
+	const at = (tokens: number | null) => ({
+		getContextUsage: () => ({ tokens, contextWindow: 1_000_000 }),
+	});
+	sendNudge(pi as never, at(640_000) as never, "growth", NUDGE_GROWTH_TOKENS);
+	sendNudge(pi as never, at(910_000) as never, "last", NUDGE_GROWTH_TOKENS);
+	// §7b: Pi does not know the size right after a compaction, and the request never states it.
+	sendNudge(pi as never, at(null) as never, "manual", NUDGE_GROWTH_TOKENS);
+	sendNudge(pi as never, at(640_000) as never, "manual", NUDGE_GROWTH_TOKENS);
+
+	assert.equal(sent[0]?.content, fenced("7", 0));
+	assert.equal(sent[1]?.content, fenced("7", 1));
+	assert.equal(sent[2]?.content, fenced("7", 2));
+	assert.equal(sent[3]?.content, fenced("7", 2), "the request must not change with the size");
+	assert.deepEqual(
+		sent.map((one) => one.triggerTurn),
+		[false, true, true, true],
+	);
 });
 
 test("one token format, everywhere", () => {
@@ -423,7 +455,10 @@ test("§2a: two spans in one call, and every one of the three defects is refused
 		[...new Set(appended.flatMap((one) => one.entryIds))].sort(),
 		"two blocks must not claim the same entry",
 	);
-	assert.match(result.content[0]?.text ?? "", /Compacted e1–e2 into b1[\s\S]*Compacted e4–e5 into b2/);
+	assert.match(
+		result.content[0]?.text ?? "",
+		/^You just compacted \d+ messages into b1\. [^\n]*\nYou just compacted \d+ messages into b2\. [^\n]*$/,
+	);
 
 	// Defect 3: the transcript of every block exists before any of them is appended.
 	for (const one of appended) assert.ok(readFileSync(one.originalPath, "utf8").length > 0, one.id);
@@ -447,8 +482,8 @@ test("§2a: a span is refused when the list it names is no longer in the view", 
 
 /**
  * The 560d loop: told to compact, the model folded three times on fresh menus (187, 65, 20
- * entries) because the result is seen once mid-turn and nothing said when to stop. Replays one
- * fold through the real tool and reads the next decision's view back: the example that caused the
+ * entries) because the result leaves the view before the next request and nothing said when to
+ * stop. Replays one fold through the real tool and reads the next decision's view back: the example that caused the
  * first failure names spans, the stale nudge is gone (A1), the receipt with the stop rule stands
  * behind the summary (§4b), and no tool result is ever left without its call.
  */
@@ -471,7 +506,7 @@ test("560d replay: after a fold every later view carries the stored receipt, no 
 		"the menu example must name spans, or the model omits the wrapper again",
 	);
 
-	await call({ spans: [{ from: "e1", to: "e2", summary: "earlier work" }] });
+	const result = await call({ spans: [{ from: "e1", to: "e2", summary: "earlier work" }] });
 	assert.equal(appended.length, 1);
 	// Pin the fold between the old nudge and the next answers, whatever the wall clock says.
 	appended[0]!.timestamp = 100;
@@ -518,15 +553,18 @@ test("560d replay: after a fold every later view carries the stored receipt, no 
 	const logged = receiptEntry();
 	assert.ok(logged !== undefined, "the fold must send a receipt entry, not just derive one");
 	const note = receipt();
-	assert.match(note ?? "", /Compacted \d+ messages into b1\./);
-	assert.match(note ?? "", /Only compact again/);
+	assert.match(note ?? "", /You just compacted \d+ messages into b1\./);
+	assert.match(note ?? "", /Carry on with the user's work\./);
+	// One text, one function: the result the tool returned is the receipt, word for word.
+	assert.equal(note, `<pi-context-fold>\n${result.content[0]?.text}\n</pi-context-fold>`);
+	assert.match(note ?? "", /Full transcript is saved at: `\S+\/b1\.txt`\n/);
 	assert.equal(hasNudge(), false, "a pre-fold nudge must not sit beside fresh folds");
 	pairsIntact();
 
 	// Two answers later, which is where the 560d loop asked for its third menu: the note is still
 	// there, next to the summary it belongs to, and no pair has been broken to keep it.
 	assistant("later", Date.now() + 20_000);
-	assert.match(receipt() ?? "", /Only compact again/);
+	assert.match(receipt() ?? "", /Carry on with the user's work\./);
 	assert.ok(receiptEntry() !== undefined, "in the view and in the log");
 	assert.ok(
 		projectSlots(buildView(entries), appended).some((slot) => slot.block?.id === "b1"),

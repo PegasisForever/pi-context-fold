@@ -87,17 +87,20 @@ export function staleNudgeEntries(view: ViewItem[], blocks: FoldBlock[]): Set<st
 	return stale;
 }
 
-/** The numbers are the receipt; the last sentence is the stop rule. It lives here and not in the
- * menu because the choice it serves exists only on post-fold turns: first folds answer the nudge
- * or the user's order, which already cover whether. No span ids: the menu that issued them is
- * already stale or going, and reissued ids would point at new text. The id names the block whose
- * summary the note follows (its transcript path carries the same id). One line per landed block,
- * and every line stays: read in order they are the ledger of what this session has compacted. */
+/** MODEL-FACING-TEXT.md §4 and §4b. The one text a landed block is reported with: the fold's tool
+ * result and the stored receipt both say exactly this, so the two can never disagree. The numbers
+ * are the receipt; "carry on" follows them, and it lives here and not in the menu because the
+ * choice it serves exists only on post-fold turns. No span ids: the receipt stays in the view for
+ * good, and the menu that issued them is already stale or going. The path goes last and in
+ * backticks, so no punctuation can be read as part of it, and it outlives the summary: a later
+ * fold that absorbs this block takes the summary away, never the file. One line per landed block;
+ * read in order the receipts are the ledger of what this session has compacted. */
 export function receiptText(block: FoldBlock): string {
 	return (
-		`Compacted ${block.msgs} messages into ${block.id}. ` +
+		`You just compacted ${block.msgs} messages into ${block.id}. ` +
 		`${shortTokens(block.tokensBefore)} → ${shortTokens(block.tokensAfter)}. ` +
-		`Only compact again if large finished work is left; otherwise carry on with the user's work.`
+		`Carry on with the user's work. ` +
+		`Full transcript is saved at: \`${block.originalPath}\``
 	);
 }
 
