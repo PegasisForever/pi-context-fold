@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 import type { SessionEntry } from "@earendil-works/pi-coding-agent";
-import { registerFold } from "../src/fold.ts";
+import { registerFold, trackRun } from "../src/fold.ts";
 import contextFold from "../src/index.ts";
 import { NUDGE_GROWTH_TOKENS, sendNudge } from "../src/nudge.ts";
 import {
@@ -315,11 +315,11 @@ test("MODEL-FACING-TEXT.md §4, §4b and §6: the success result, the receipt an
  * MODEL-FACING-TEXT.md §7, §7a and §7b, sent through the real sender with the document's own
  * numbers. The nudges went untested once, and the code and the document drifted by a word.
  */
-test("MODEL-FACING-TEXT.md §7, §7a and §7b: the three nudges are the document's, and only §7 waits", () => {
-	const sent: { content: string; triggerTurn: boolean }[] = [];
+test("MODEL-FACING-TEXT.md §7, §7a and §7b: the three nudges are the document's, all steers, and only §7 waits", () => {
+	const sent: { content: string; triggerTurn: boolean; deliverAs: string }[] = [];
 	const pi = {
-		sendMessage: (message: { content: string }, options: { triggerTurn: boolean }) =>
-			sent.push({ content: message.content, triggerTurn: options.triggerTurn }),
+		sendMessage: (message: { content: string }, options: { triggerTurn: boolean; deliverAs: string }) =>
+			sent.push({ content: message.content, ...options }),
 	};
 	const at = (tokens: number | null) => ({
 		getContextUsage: () => ({ tokens, contextWindow: 1_000_000 }),
@@ -338,6 +338,11 @@ test("MODEL-FACING-TEXT.md §7, §7a and §7b: the three nudges are the document
 		sent.map((one) => one.triggerTurn),
 		[false, true, true, true],
 	);
+	// Read at the model's next call, mid-task or not: none waits for the model to stop.
+	assert.deepEqual(
+		sent.map((one) => one.deliverAs),
+		["steer", "steer", "steer", "steer"],
+	);
 });
 
 /**
@@ -347,11 +352,11 @@ test("MODEL-FACING-TEXT.md §7, §7a and §7b: the three nudges are the document
  * so the clock restarts from the first measurement after it — and still counts from there.
  */
 test("/compact restarts the growth clock at the next measurement, and the clock still runs", () => {
-	const handlers: Record<string, (event: unknown, ctx: unknown) => unknown> = {};
+	const handlers: Record<string, ((event: unknown, ctx: unknown) => unknown)[]> = {};
 	const sent: string[] = [];
 	const pi = {
 		on: (name: string, handler: (event: unknown, ctx: unknown) => unknown) => {
-			handlers[name] = handler;
+			handlers[name] = [...(handlers[name] ?? []), handler];
 		},
 		registerTool: () => {},
 		registerMessageRenderer: () => {},
@@ -369,11 +374,12 @@ test("/compact restarts the growth clock at the next measurement, and the clock 
 		sent.map((text) => (text.includes("The user has requested") ? "request" : "reminder"));
 	const turnEnd = (at: number) => {
 		tokens = at;
-		handlers.turn_end?.({}, ctx);
+		for (const handler of handlers.turn_end ?? [])
+			handler({ message: { role: "assistant", content: [{ type: "text", text: "done" }] } }, ctx);
 	};
 
 	tokens = 218_000;
-	const answer = handlers.session_before_compact?.({ reason: "manual" }, ctx);
+	const answer = handlers.session_before_compact?.[0]?.({ reason: "manual" }, ctx);
 	assert.deepEqual(answer, { cancel: true });
 	assert.deepEqual(kinds(), ["request"]);
 
@@ -441,7 +447,7 @@ function driveCompact() {
 			signal: unknown,
 			onUpdate: unknown,
 			ctx: unknown,
-		) => Promise<{ content: { text: string }[] }>;
+		) => Promise<{ content: { text: string }[]; terminate?: boolean }>;
 	};
 	const pi = {
 		registerTool: (definition: unknown) => {
@@ -464,8 +470,24 @@ function driveCompact() {
 			} as unknown as SessionEntry);
 		},
 	};
-	const state = { menu: undefined, menuAt: 0, folded: false, baseline: 0, reported: new Set<string>() };
+	const handlers: Record<string, ((event: unknown) => unknown)[]> = {};
+	const on = (name: string, handler: (event: unknown) => unknown) => {
+		handlers[name] = [...(handlers[name] ?? []), handler];
+	};
+	const state = {
+		menu: undefined,
+		menuAt: 0,
+		folded: false,
+		baseline: 0,
+		reported: new Set<string>(),
+		working: false,
+		compactOnly: false,
+	};
 	registerFold(pi as never, state);
+	trackRun({ on } as never, state);
+	const emit = (name: string, event: unknown) => {
+		for (const handler of handlers[name] ?? []) handler(event);
+	};
 	const ctx = {
 		sessionManager: {
 			buildContextEntries: () => entries,
@@ -474,7 +496,7 @@ function driveCompact() {
 		},
 	};
 	const call = (params: unknown) => tool!.execute("call-1", params, undefined, undefined, ctx);
-	return { call, appended, state, entries };
+	return { call, appended, state, entries, emit };
 }
 
 test("§2a: two spans in one call, and every one of the three defects is refused", async () => {
@@ -530,6 +552,92 @@ test("§2a: two spans in one call, and every one of the three defects is refused
 
 	// Defect 3: the transcript of every block exists before any of them is appended.
 	for (const one of appended) assert.ok(readFileSync(one.originalPath, "utf8").length > 0, one.id);
+});
+
+/**
+ * §7b: a fold ends the run only when the run exists to compact — our request arrived with no task
+ * in progress, and nothing asked for work since. Replayed live on the medi session, the model asked
+ * for one more reply after such a fold carried on in 4 of 6 runs. The last nudge is a steer and can
+ * land mid-task, where ending the run would cut your work short.
+ */
+test("§7b: a fold ends the run only when the run exists to compact", async () => {
+	const request = (kind: string) => ({
+		message: {
+			role: "custom",
+			customType: NUDGE_CUSTOM_TYPE,
+			content: "…",
+			details: { lines: [], kind },
+		},
+	});
+	const reply = (calls: boolean) => ({
+		message: {
+			role: "assistant",
+			content: calls
+				? [{ type: "toolCall", id: "t", name: "bash", arguments: {} }]
+				: [{ type: "text", text: "done" }],
+		},
+	});
+	const user = { message: { role: "user", content: "next task" } };
+	const other = { message: { role: "custom", customType: "pi-background", content: "job finished" } };
+	const foldAfter = async (events: [string, unknown][]) => {
+		const { call, emit } = driveCompact();
+		for (const [name, event] of events) emit(name, event);
+		const menu = await call({});
+		assert.notEqual(menu.terminate, true, "the menu call never ends the run");
+		return (await call({ spans: [{ from: "e1", to: "e1", summary: "done" }] })).terminate === true;
+	};
+	const idle: [string, unknown] = ["agent_end", {}];
+
+	assert.equal(await foldAfter([idle, ["message_end", request("manual")]]), true, "/compact while idle");
+	assert.equal(
+		await foldAfter([
+			["turn_end", reply(false)],
+			["message_end", request("last")],
+		]),
+		true,
+		"the last nudge after the final answer",
+	);
+	assert.equal(
+		await foldAfter([
+			["turn_end", reply(true)],
+			["message_end", request("last")],
+		]),
+		false,
+		"the last nudge mid-task: your work goes on",
+	);
+	assert.equal(
+		await foldAfter([["turn_end", reply(true)], idle, ["message_end", request("manual")]]),
+		true,
+		"a run that ended on a tool call is still over",
+	);
+	assert.equal(
+		await foldAfter([idle, ["message_end", request("manual")], ["message_end", user]]),
+		false,
+		"your message after the request is work",
+	);
+	assert.equal(
+		await foldAfter([idle, ["message_end", request("manual")], ["message_end", other]]),
+		false,
+		"another extension's message is work",
+	);
+	assert.equal(
+		await foldAfter([
+			["message_end", user],
+			["turn_end", reply(true)],
+		]),
+		false,
+		"a fold during your work",
+	);
+	assert.equal(
+		await foldAfter([idle, ["message_end", request("growth")]]),
+		false,
+		"a growth reminder starts nothing",
+	);
+	assert.equal(
+		await foldAfter([idle, ["message_end", request("manual")], idle]),
+		false,
+		"the run the request started is over",
+	);
 });
 
 test("§2a: a span is refused when the list it names is no longer in the view", async () => {

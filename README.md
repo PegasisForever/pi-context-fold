@@ -31,8 +31,9 @@ different instruction from every other harness, and the reason this one can be s
   reports the pressure and says what is worth folding; the model decides. Nothing is required
   of it, and it does not interrupt what you are doing.
 - Once there is no room left for another nudge, the last one says so and asks for the fold.
-  That is the only one that starts a turn of its own, because after it the window fills and
-  the older half of the session is cut from view with no summary.
+  The model reads it at its next call, even mid-task. If it arrives after the model has
+  finished, it is the only one that starts a turn of its own, because after it the window fills
+  and the older half of the session is cut from view with no summary.
 - The model calls `compact()` with no arguments and gets a menu — the foldable conversation
   partitioned into at most 200 contiguous entries, `e1…e200`.
 - It picks one or more spans, which must not overlap, and writes a summary for each. Those
@@ -40,7 +41,8 @@ different instruction from every other harness, and the reason this one can be s
 - The original goes to `~/.pi/agent/context-fold/<session>/b5.txt`. The model is told in its
   system prompt to search that folder before asking you to repeat something — and it does.
 - `/compact` does not run pi's compaction. It tells the model that you asked for a compaction,
-  with a turn of its own, and the model chooses what to compact and writes the summaries.
+  with a turn of its own, and the model chooses what to compact and writes the summaries. The
+  turn ends when the fold lands.
 - On a context overflow, the older half is cut mechanically and written to a file. No second
   model call, no summarisation that could fail.
 

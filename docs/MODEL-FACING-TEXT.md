@@ -434,9 +434,9 @@ To compact, call `compact()` with no arguments to list the spans and the summary
 
 **165 tokens**, measured, up from 43. The extra 122 buy the decision itself: without them the
 model cannot tell whether compacting is worth a 5.4K menu call, and the cheapest way to find out
-is to make the call. It does **not** start a turn of its own — the model reads it at the start
-of its next turn either way, and waking the model to tell it that nothing is required spends a
-model call on nothing.
+is to make the call. It does **not** start a turn of its own: sent while the model is running,
+it is read at the model's next call; sent at the end of a run, at the start of the next one.
+Waking the model to tell it that nothing is required spends a model call on nothing.
 
 *"If nothing qualifies, carry on with the work"* is the one sentence that has to be there. It is
 what keeps this a report: §7a and §7b are messages the model must act on, and a report that looks
@@ -452,7 +452,9 @@ drift from the number that produces it — including when it is not 200K.
 A nudge needs 200K of growth to fire, so once the window has less than that left, no second
 nudge can arrive before the overflow cut. That one is a warning, and it says so. It is the
 only nudge that starts a turn of its own, because there may be no ordinary turn left in which
-to act on it.
+to act on it. Like every nudge it is a steer: sent mid-task, the model reads it at its very next
+call, folds, and goes on with your work; sent on the final answer, it keeps the run going for the
+fold alone, and that run ends when the fold lands (§7b).
 
 ```
 <pi-context-fold>
@@ -494,6 +496,20 @@ To compact, call `compact()` with no arguments to list the spans and the summary
 
 **123 tokens**, measured. It shares its middle and last sentences with §7a and §7 — one
 constant each in the code.
+
+**The run ends when the fold lands.** The compact call that folds returns `terminate: true`, so
+Pi asks the model for nothing more: you see the fold and the receipt, and the prompt is yours
+again. The same holds after §7a when it arrived on the model's final answer — then that run too
+exists only to compact. Asked for one more reply with no work pending, the model goes looking for
+some — replayed six times on the live session where it read back all three transcripts, it
+carried on in four: reading files, checking git, compacting again. No wording fixed that: keeping
+this request in view made it compact a second time, and dropping *"carry on"* from the receipt
+made it carry on in all six.
+
+What decides it is whether a task was in progress when the request arrived — the last turn
+ended with tool calls — and whether anything asked for work since: your message, or another
+extension's. Then the fold is a step in that work and the run goes on. The rule is `trackRun`
+(`fold.ts`), kept from Pi's own turn, message and run events; nothing the model reads changes.
 
 The prior art shows the cost of getting this wrong: `acp-kernel` ships its 1,179-token
 rules in the system prompt **and** again in full inside every nudge.

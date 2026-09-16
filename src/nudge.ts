@@ -15,10 +15,16 @@ export const NUDGE_GROWTH_TOKENS = 200_000;
 /**
  * MODEL-FACING-TEXT.md §7. `growth` is the ordinary reminder, which waits for the next turn; `last`
  * is §7a, the one sent when no second reminder can fire; `manual` is §7b, the answer to `/compact`.
- * The last two start a turn of their own: something has to happen before the window fills, or
- * because you pressed a key.
+ * The last two start a turn of their own when the model is idle: something has to happen before the
+ * window fills, or because you pressed a key. While it runs, all three are read at its next call.
  */
 export type NudgeKind = "growth" | "last" | "manual";
+
+/** What a nudge carries besides its text: the TUI lines, and which of the three it is, so a fold can
+ * tell a run that exists only to compact from a run doing your work (`fold.ts`). */
+export interface NudgeDetails extends Shown {
+	kind: NudgeKind;
+}
 
 /**
  * The one place a nudge is sent from: the growth clock (§8) and `/compact` (§7b) both arrive here.
@@ -33,14 +39,16 @@ export function sendNudge(pi: ExtensionAPI, ctx: ExtensionContext, kind: NudgeKi
 			? undefined
 			: `${shortTokens(usage.tokens)} of ${shortTokens(usage.contextWindow)} context used.`;
 	const lines = kind === "last" ? ["Last reminder before the context runs out."] : [];
-	pi.sendMessage<Shown>(
+	pi.sendMessage<NudgeDetails>(
 		{
 			customType: NAME,
 			content: `<${NAME}>\n${nudgeText(kind, used, growth)}\n</${NAME}>`,
-			details: { lines: used === undefined ? lines : [used, ...lines] },
+			details: { lines: used === undefined ? lines : [used, ...lines], kind },
 			display: true,
 		},
-		{ deliverAs: "followUp", triggerTurn: kind !== "growth" },
+		// A steer, every kind: read at the model's next call, mid-task or not. The growth reminder
+		// starts nothing; the other two start a run when none is going.
+		{ deliverAs: "steer", triggerTurn: kind !== "growth" },
 	);
 }
 

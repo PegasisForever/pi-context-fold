@@ -5,7 +5,7 @@ import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-a
 import { type Config, readConfig } from "./config.ts";
 import { blocksDir } from "./dump.ts";
 import { registerEmergency } from "./emergency.ts";
-import { type FoldState, registerFold } from "./fold.ts";
+import { type FoldState, registerFold, trackRun } from "./fold.ts";
 import { log } from "./log.ts";
 import { NAME, sendNudge, WHY } from "./nudge.ts";
 import { projectSlots, RECEIPT_CUSTOM_TYPE } from "./project.ts";
@@ -19,7 +19,15 @@ export default function contextFold(pi: ExtensionAPI): void {
 	// At load, from `process.cwd()`, because the factory gets no context object and because a throw
 	// here drops the whole extension with a message, where a throw in a handler is swallowed (§13).
 	const config = readConfig(process.cwd());
-	const state: FoldState = { menu: undefined, menuAt: 0, folded: false, baseline: 0, reported: new Set() };
+	const state: FoldState = {
+		menu: undefined,
+		menuAt: 0,
+		folded: false,
+		baseline: 0,
+		reported: new Set(),
+		working: false,
+		compactOnly: false,
+	};
 	// Fail loud about which code runs: a running session keeps the code from its own start, so
 	// installed-latest never implies running-latest. Without this line the two cannot be told apart.
 	try {
@@ -49,6 +57,7 @@ export default function contextFold(pi: ExtensionAPI): void {
 	// registered in `session_start` disappears for the whole session the first time anything there
 	// fails — while the system prompt goes on saying it exists.
 	registerFold(pi, state);
+	trackRun(pi, state);
 	registerEmergency(pi, config, state);
 
 	pi.registerMessageRenderer<Shown>(NAME, (message, _options, theme) =>

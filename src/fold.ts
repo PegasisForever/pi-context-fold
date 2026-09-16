@@ -3,6 +3,7 @@ import { type Static, Type } from "typebox";
 import { originalPath, writeOriginal } from "./dump.ts";
 import { log } from "./log.ts";
 import { buildMenu, type Menu, type MenuEntry } from "./menu.ts";
+import type { NudgeDetails } from "./nudge.ts";
 import {
 	NUDGE_CUSTOM_TYPE,
 	noArguments,
@@ -56,6 +57,11 @@ export interface FoldState {
 	 * to compact, whose own turn is the first chance to measure. */
 	baseline: number | undefined;
 	reported: Set<string>;
+	/** The last turn ended with tool calls, so the model is mid-task. Kept by `trackRun`. */
+	working: boolean;
+	/** This run exists only to compact: our request arrived when no task was in progress, and nothing
+	 * has asked for work since. A fold in such a run ends it (§7b). Kept by `trackRun`. */
+	compactOnly: boolean;
 }
 
 // The one tool (§6). No arguments returns the menu; arguments fold. Arguments are Pi's own parse and
@@ -133,6 +139,9 @@ export function registerFold(pi: ExtensionAPI, state: FoldState): void {
 			return {
 				content: [{ type: "text", text }],
 				details: { lines: planned.map((one) => foldForYou(one.record, one.fold)) },
+				// A run that exists only to compact ends here, with no further model call: asked for
+				// one more reply with nothing pending, the model goes looking for work (§7b).
+				terminate: state.compactOnly,
 			};
 		},
 		renderCall: (params, theme) =>
@@ -146,6 +155,36 @@ export function registerFold(pi: ExtensionAPI, state: FoldState): void {
  * model can still see the list it is naming ids from. */
 function assistants(view: ViewItem[]): number {
 	return view.filter((item) => item.message.role === "assistant").length;
+}
+
+/**
+ * Whether a run exists only to compact (§7a, §7b), from Pi's own events. `/compact` starts a run of
+ * its own; the last nudge arrives as a steer, read at the model's next call. When either lands with
+ * no task in progress — the last turn ended without tool calls, or no run was going — a fold is the
+ * whole run, and ending it there keeps the model from going looking for work: asked for one more
+ * reply after `/compact`, it carried on in 4 of 6 live replays. When either lands mid-task, the
+ * fold is a step in your work and the run goes on. Your message, or another extension's, arriving
+ * after the request is work too. Our receipts and growth reminders are appended outside the loop
+ * and never reach `message_end`.
+ */
+export function trackRun(pi: ExtensionAPI, state: FoldState): void {
+	pi.on("turn_end", (event) => {
+		const message = event.message;
+		state.working =
+			message.role === "assistant" && message.content.some((part) => part.type === "toolCall");
+	});
+	pi.on("message_end", (event) => {
+		const message = event.message;
+		if (message.role === "user") state.compactOnly = false;
+		if (message.role !== "custom") return;
+		const kind =
+			message.customType === NUDGE_CUSTOM_TYPE ? (message.details as NudgeDetails)?.kind : undefined;
+		state.compactOnly = (kind === "manual" || kind === "last") && !state.working;
+	});
+	pi.on("agent_end", () => {
+		state.working = false;
+		state.compactOnly = false;
+	});
 }
 
 /** MODEL-FACING-TEXT.md §5. Each failure names the id and the next action; none of them returns the menu. */

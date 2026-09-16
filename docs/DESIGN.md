@@ -592,9 +592,12 @@ the round, never to the user prompt.
 cut. That one says so and asks for the fold. It is a fact about the arithmetic, not a second
 threshold to tune.
 
-**Only the last nudge starts a turn of its own**, with `deliverAs: "followUp"` and
-`triggerTurn: true`; an ordinary nudge is queued and read at the start of the next turn. The
-first version woke the model on every nudge, on the grounds that a queued nudge leaves the
+**Only the last nudge starts a turn of its own**, with `triggerTurn: true`; an ordinary nudge
+never does. **Every nudge is a steer** (`deliverAs: "steer"`): sent while the model runs, it is
+read at the model's next call, mid-task or not. The last nudge used to be a follow-up, which Pi
+holds until the model stops — so the warning that the window is about to run out waited behind
+however much work was left, and the fold always landed after your task instead of inside it
+(§17, row 19.84). The first version woke the model on every nudge, on the grounds that a queued nudge leaves the
 fold undone until the user happens to type. That argument holds for a message the model must
 act on and no longer holds for one it may ignore: waking it to say that nothing is required
 spends a model call on nothing. pi-background wakes the model for a finished background job
@@ -624,7 +627,15 @@ that you asked for a compaction, and the model chooses the range and writes the 
 its own message, not the ordinary nudge: the nudge is about growth and says the model may decline,
 and pressing the key is neither. It is not the last nudge either — pressing the key says *now*,
 not *there is an emergency*. It is sent with `triggerTurn: true`, because you pressed a key and
-something has to happen (§17, rows 19.73 and 19.80).
+something has to happen (§17, rows 19.73 and 19.80). **That run ends when the fold lands**: the
+folding call returns `terminate: true` when the run exists only to compact, so Pi makes no
+further model call. Without it the model, asked for a reply with nothing pending, went looking
+for work — it read back every transcript it had just written (§17, row 19.83). "Only to compact"
+is read from Pi's events, not from the view (`trackRun`): our request (`/compact`, or the last
+nudge) arrived when the last turn had no tool calls or no run was going, and neither your message
+nor another extension's has arrived since. The view cannot answer it: a run that ended on a
+terminating fold still shows a tool call with nothing after it. A last nudge that lands mid-task
+leaves the run alone, and so does any fold during your work.
 
 **No model call. The recovery is mechanical:**
 
@@ -701,13 +712,13 @@ smaller than the content it replaces, log it. The fold still happens.
 
 | File | Purpose | Lines |
 |---|---|---|
-| `fold.ts` | the one tool: the menu, the spans, the records, the receipt | 271 |
+| `fold.ts` | the one tool: the menu, the spans, the records, the receipt, ending a run that exists only to compact | 310 |
 | `menu.ts` | even-count partition, rendering | 178 |
 | `emergency.ts` | `session_before_compact`: `/compact`, and the overflow cut | 121 |
-| `index.ts` | event wiring, tool registration, the growth clock | 128 |
+| `index.ts` | event wiring, tool registration, the growth clock | 137 |
 | `project.ts` | fold projection, block edit, pair removal, nudge retirement, the fold text | 169 |
 | `dump.ts` | write the transcripts to the session cache dir | 86 |
-| `nudge.ts` | the three nudge texts, and the one place they are sent from | 88 |
+| `nudge.ts` | the three nudge texts, and the one place they are sent from | 96 |
 | `config.ts` | the one key, out of Pi's settings file | 65 |
 | `shown.ts` | the TUI components both readers' halves are drawn with | 41 |
 | `state.ts` | block records via `appendEntry`, read from `getBranch()` | 36 |
@@ -715,7 +726,7 @@ smaller than the content it replaces, log it. The fold still happens.
 | `status.ts` | `setStatus` line | 15 |
 | `view.ts` | build the view from entries | 14 |
 | `log.ts` | one JSON line writer | 13 |
-| **Total** | **1,257**, against a first estimate of ~830. | |
+| **Total** | **1,313**, against a first estimate of ~830. | |
 
 Against ~9,950 lines of source in the original.
 
@@ -723,13 +734,13 @@ Against ~9,950 lines of source in the original.
 
 ## 12. The test suite
 
-**Eleven tests, 642 lines.** They build their own fixtures and depend on nothing outside the
+**Twelve tests, 750 lines.** They build their own fixtures and depend on nothing outside the
 repository: block records read back from the branch and absorbed correctly, the status line,
 the model-facing strings §4, §4b, §6, §7, §7a and §7b read out of `docs/MODEL-FACING-TEXT.md`
-rather than copied, the one token format, two that drive the real tool through a stub session —
+rather than copied, the one token format, three that drive the real tool through a stub session —
 one for the three defects the list of spans must not bring back, one for a list of ids that is
-no longer current (§6) — and one that drives the real event handlers through `/compact` and the
-growth clock (§8).
+no longer current (§6), one for which folds end the run (§7b) — and one that drives the real
+event handlers through `/compact` and the growth clock (§8).
 
 **There used to be forty-four.** The other forty replayed a corpus of 25 recorded session
 `.jsonl` files from one machine, by absolute path. Everything in §19's *Verified* column was
@@ -996,6 +1007,8 @@ fires at a sensible moment.
 | 19.50 | "menu tokens are excluded from the growth measurement" | they are not; the menu result just leaves the view next round | the arithmetic was wrong (20K, not 200K) and Pi's single number has nothing to subtract from |
 | 19.51 | A "hold the summary until no call is pending" condition | complete the closure's transitivity instead | the mid-round case becomes unrepresentable rather than handled — C4 |
 | 19.52 | "excluding compaction entries makes coverage contiguous" | it does not; coverage can split regardless | a span with no compaction entry, contiguous when folded, splits when a newer compaction hoists past an older one |
+| 19.84 | The last nudge is a follow-up, and a fold ends the run whenever our request is the newest ask in the view | every nudge is a steer; a fold ends the run only when our request arrived with no task in progress, read from Pi's turn, message and run events | a follow-up waits until the model stops, so the last warning before the window fills waited behind the rest of the task; as a steer it can land mid-task, where ending the run would cut your work short. The view could not tell the two apart, and it misreads a run that ended on a terminating fold as still working |
+| 19.83 | After a `/compact` fold, Pi asks the model for one more reply | the folding call returns `terminate: true` when the run exists only to compact (`/compact` or the last nudge) | live: the model read back all three transcripts it had just written; replayed six times per variant it carried on in 4 of 6, and no wording change helped — keeping the request in view made it compact again, dropping *carry on* made it carry on in 6 of 6. The receipt is appended at the end of the turn, not queued as a follow-up, so it does not restart the run |
 | 19.82 | One receipt per landed block | one receipt per `compact` call, a line per block, the folder and the closing sentence once | live: a six-span call put six notes in the view, each repeating the stop sentence and the folder path — ~290 tokens on every later request, now that receipts are never retired, for ~107 |
 | 19.81 | `/compact` leaves the growth baseline alone | the first measurement after `/compact` becomes the baseline | live: a resumed session, a fresh process with the baseline at 0, and Pi's 218K estimate against a real 576K — the menu call's turn ended with a reminder of 576K of growth on top of the request; a baseline taken at the key press would still have been 358K too low |
 | 19.80 | `/compact` sends the ordinary nudge, §7 word for word; the three nudge texts written out separately; §7 untested | `/compact` sends its own request (§7b); the three texts share their sentences as constants, and the system prompt shares *"the compacted range and the summary are yours to decide"*; §7, §7a and §7b are read from the document by the suite | a key you pressed is not a growth reminder, and telling the model it may decline answers a question you did not ask; the untested nudge had already drifted from the document by a word (*see fit* against *seem suitable*) |
