@@ -182,11 +182,21 @@ Keep verbatim for these because they are the search keys into the transcript fil
 Keep what each piece of work was trying to settle, each decision with the reason for it, each dead end with what killed it, and every question left open.
 Drop the bulk you will not need again: logs, file contents, repeated status checks, the discussion that reached a conclusion — keep the conclusion. For anything large you drop, leave one line saying what was in it.
 Record what happened, not what to do next.
-No fixed sections: thematic headers if the span covers several concerns, dense bullets, whatever length the span needs.
+No fixed sections: thematic headers if the span covers several concerns, dense bullets.
+Aim for 5% of the span's tokens: a 100K span gets a summary of about 5K tokens, about 20,000 characters. A summary under 3% is refused.
 </how-to-summarize>
 ```
 
-**337 tokens**, measured with Pi's own `estimateTokens`, down from 433. Compare the prior
+**The size is a number, not a judgement.** The line used to end *"whatever length the span
+needs"*, and one model read that as "short" every time: 0.1–0.4% on every fold, 112K folded
+into 110 tokens, while the span held eleven times more of your own words than the summary did.
+Another model wrote 1.3–8.3% under the same line. 5% still frees 95% of the span, and a 100K span
+gets room for its decisions, dead ends, exact strings and your requests. The worked example
+gives characters as well as tokens, because characters are what the model can judge as it
+writes, and Pi's estimate is a quarter of them. The floor is stated here so the refusal (§5) is
+never a surprise.
+
+**367 tokens**, measured with Pi's own `estimateTokens`, up from 337 for the size line. Compare the prior
 art: `billion-context-pi`'s system prompt is **3,704 tokens in every request**, and its
 nudge adds 1,366 of which 1,179 duplicate the system prompt verbatim.
 
@@ -257,7 +267,7 @@ message, so the session held two rounds, H1 excluded both, and the table came ba
 Nothing is compactable yet, try again when the conversation is longer.
 ```
 
-No table, no example, **and no §3a instruction**: 337 tokens of guidance on choosing a span
+No table, no example, **and no §3a instruction**: 367 tokens of guidance on choosing a span
 is waste when there is no span to choose (P1), and the paragraph alone reads as a complete
 answer. An example naming ids that do not exist is what caused the model to fold `e2–e3` in
 that run (C8 — the failure was our information, not the model).
@@ -364,6 +374,27 @@ Each names the id and the next action (P3).
 | Two spans overlap | `Spans e1–e3 and e3–e9 overlap. Every entry can be in one span only.` |
 | The list is not current | `The list these ids came from is not the current one. Call compact() with no arguments, then compact in your next message.` |
 | The span replaces nothing | `Compacting e1–e3 would replace nothing: the list is out of date. Call compact() for the current one.` |
+| A summary under 3% | see below |
+
+A summary under 3% of the tokens it replaces refuses the whole call, before anything is
+written. One line per span that fell short, with exact counts:
+
+```
+Nothing was compacted: a summary must be at least 3% of the tokens it replaces.
+- e1–e100: 330 tokens for 191,520 (0.2%). Write at least 5,746 tokens (22,984 characters), aim for 9,576.
+Call compact again with the same spans and longer summaries.
+```
+
+The list those ids came from stays current for the retry. A refused fold changes nothing, and
+without that the retry would be refused as stale and cost a second 5K menu to resend the same
+spans.
+
+**Refused once, not twice.** The next try lands whatever its size, and the check applies again
+after a fold lands or the run ends. Replayed three times on a live 570K session, the model
+answered each refusal with longer summaries — 0.5–1.2% at first, then 1.2–2.3%, stalling at
+2–3% — and with the refusal repeating, not one of the three runs folded anything in eight
+calls. Neither message says the second try is exempt: the model is told the floor, and writes
+toward it.
 
 There is no "would orphan a block" failure either. It existed while `compress` took an
 array of spans, where one span could take over another block's anchor. With one span per
@@ -612,14 +643,14 @@ Last reminder before the context runs out.
 |---|---|
 | **Every request** (system prompt + one tool schema) | **343** (158 + 185) |
 | Per nudge | 165, or 123 for the last one and for `/compact` |
-| Per menu | ~5,300 (337 of it instruction) |
+| Per menu | ~5,300 (367 of it instruction) |
 | Per fold | ~48 receipt (+~10 per further block in the call) + ~15 permanent prefix |
 
 The original, **measured** rather than estimated: **3,704 tokens of system prompt in every
 request**, plus four tool schemas, plus a ref tag on every message in context, plus 1,366
 tokens per nudge of which 1,179 repeat the system prompt verbatim.
 
-Ours: **343 tokens per request**, and the 337-token instruction is paid only on the turns
+Ours: **343 tokens per request**, and the 367-token instruction is paid only on the turns
 where a fold actually happens.
 
 ---

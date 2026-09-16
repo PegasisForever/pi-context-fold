@@ -154,6 +154,13 @@ const COLUMNS = "id     rounds  tokens  first … last";
 
 export const EMPTY = "Nothing is compactable yet, try again when the conversation is longer.";
 
+/** A summary's size against what it replaces, in Pi's own token estimate (§3a, §5). The target is
+ * what the menu asks for; below the floor `compact` refuses the fold. Measured live before either
+ * existed: one model wrote 0.1–0.4% on every fold — 112K into 110 tokens — while its span held 11
+ * times more of your own words than its summary. */
+export const SUMMARY_TARGET = 0.05;
+export const SUMMARY_FLOOR = 0.03;
+
 export const INSTRUCTION = `<compact>
 <how-to-choose-the-span>
 Avoid compacting recent turns.
@@ -170,8 +177,13 @@ Keep verbatim for these because they are the search keys into the transcript fil
 Keep what each piece of work was trying to settle, each decision with the reason for it, each dead end with what killed it, and every question left open.
 Drop the bulk you will not need again: logs, file contents, repeated status checks, the discussion that reached a conclusion — keep the conclusion. For anything large you drop, leave one line saying what was in it.
 Record what happened, not what to do next.
-No fixed sections: thematic headers if the span covers several concerns, dense bullets, whatever length the span needs.
+No fixed sections: thematic headers if the span covers several concerns, dense bullets.
+Aim for ${percent(SUMMARY_TARGET)} of the span's tokens: a 100K span gets a summary of about 5K tokens, about 20,000 characters. A summary under ${percent(SUMMARY_FLOOR)} is refused.
 </how-to-summarize>`;
+
+function percent(share: number): string {
+	return `${Math.round(share * 100)}%`;
+}
 
 function toolCallIds(message: Extract<Msg, { role: "assistant" }>): string[] {
 	return message.content.flatMap((part) => (part.type === "toolCall" ? [part.id] : []));

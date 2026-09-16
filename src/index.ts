@@ -27,6 +27,7 @@ export default function contextFold(pi: ExtensionAPI): void {
 		reported: new Set(),
 		working: false,
 		compactOnly: false,
+		refused: false,
 	};
 	// Fail loud about which code runs: a running session keeps the code from its own start, so
 	// installed-latest never implies running-latest. Without this line the two cannot be told apart.

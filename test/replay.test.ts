@@ -4,8 +4,9 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 import type { SessionEntry } from "@earendil-works/pi-coding-agent";
-import { registerFold, trackRun } from "../src/fold.ts";
+import { registerFold, tooShort, trackRun } from "../src/fold.ts";
 import contextFold from "../src/index.ts";
+import { INSTRUCTION } from "../src/menu.ts";
 import { NUDGE_GROWTH_TOKENS, sendNudge } from "../src/nudge.ts";
 import {
 	NUDGE_CUSTOM_TYPE,
@@ -304,6 +305,11 @@ test("MODEL-FACING-TEXT.md §4, §4b and §6: the success result, the receipt an
 	});
 	assert.equal(`<pi-context-fold>\n${receiptText([record, second])}\n</pi-context-fold>`, fenced("4b", 1));
 
+	// §3a: the instruction above the table, with the size target and the floor.
+	assert.equal(INSTRUCTION, fenced("3", 0));
+	// §5: the short-summary refusal, with the document's own numbers.
+	assert.equal(tooShort([{ from: "e1", to: "e100", before: 191_520, after: 330 }]), fenced("5", 0));
+
 	const message = summaryMessage({ ...record, summary: "…the model's summary text…" });
 	// §6: the role is load-bearing. pi-ai reads a `user` message as interrupting a tool flow, which
 	// is what turns a mis-placed summary into a provider rejection rather than a silent oddity.
@@ -406,6 +412,9 @@ test("one token format, everywhere", () => {
  * this pins each one: overlapping spans are rejected whole, the arrival order changes nothing, and
  * nothing is appended to the session until every step that can throw has already run.
  */
+/** A summary long enough to pass the 3% floor on the spans these tests fold (a round is ~500 tokens). */
+const long = (text: string): string => `${text}: ${"a detail worth keeping, ".repeat(20)}`;
+
 function driveCompact() {
 	const entries: SessionEntry[] = [];
 	let n = 0;
@@ -482,6 +491,7 @@ function driveCompact() {
 		reported: new Set<string>(),
 		working: false,
 		compactOnly: false,
+		refused: false,
 	};
 	registerFold(pi as never, state);
 	trackRun({ on } as never, state);
@@ -519,8 +529,8 @@ test("§2a: two spans in one call, and every one of the three defects is refused
 	// Defect 2: order. The same two spans, given backwards, give the same blocks in view order.
 	const result = await call({
 		spans: [
-			{ from: "e4", to: "e5", summary: "later work" },
-			{ from: "e1", to: "e2", summary: "earlier work" },
+			{ from: "e4", to: "e5", summary: long("later work") },
+			{ from: "e1", to: "e2", summary: long("earlier work") },
 		],
 	});
 	assert.equal(appended.length, 2);
@@ -528,7 +538,7 @@ test("§2a: two spans in one call, and every one of the three defects is refused
 		appended.map((one) => one.id),
 		["b1", "b2"],
 	);
-	assert.equal(appended[0]?.summary, "earlier work", "b1 must be the earlier span");
+	assert.equal(appended[0]?.summary, long("earlier work"), "b1 must be the earlier span");
 	assert.deepEqual(
 		appended.flatMap((one) => one.entryIds).sort(),
 		[...new Set(appended.flatMap((one) => one.entryIds))].sort(),
@@ -584,7 +594,7 @@ test("§7b: a fold ends the run only when the run exists to compact", async () =
 		for (const [name, event] of events) emit(name, event);
 		const menu = await call({});
 		assert.notEqual(menu.terminate, true, "the menu call never ends the run");
-		return (await call({ spans: [{ from: "e1", to: "e1", summary: "done" }] })).terminate === true;
+		return (await call({ spans: [{ from: "e1", to: "e1", summary: long("done") }] })).terminate === true;
 	};
 	const idle: [string, unknown] = ["agent_end", {}];
 
@@ -640,6 +650,79 @@ test("§7b: a fold ends the run only when the run exists to compact", async () =
 	);
 });
 
+/**
+ * §5: a summary under 3% of what it replaces is refused whole, before anything is written — one
+ * model folded 112K into 110 tokens on every call. The list stays current, so the retry needs no
+ * second menu.
+ */
+test("§5: a first summary under 3% is refused with nothing written, and the second try lands with no new menu", async () => {
+	const { call, appended, entries, emit } = driveCompact();
+	// Each call arrives in an assistant message of its own, as in a live session: the menu's ids
+	// are fresh for the message after it, and only the refusal keeps them fresh one message longer.
+	let n = 90;
+	const message = () =>
+		entries.push({
+			type: "message",
+			id: `m${n}`,
+			parentId: null,
+			timestamp: "2026-09-12T00:00:00.000Z",
+			message: {
+				role: "assistant",
+				timestamp: n++,
+				content: [{ type: "text", text: "calling compact" }],
+			},
+		} as unknown as SessionEntry);
+	message();
+	await call({});
+	const receipts = () => entries.filter((e) => e.type === "custom_message").length;
+	message();
+	await assert.rejects(
+		call({
+			spans: [
+				{ from: "e1", to: "e2", summary: "too short" },
+				{ from: "e4", to: "e4", summary: long("long enough") },
+			],
+		}),
+		(error: Error) => {
+			assert.match(error.message, /^Nothing was compacted: a summary must be at least 3% /);
+			assert.match(error.message, /\n- e1–e2: \d+ tokens for [\d,]+ \(0\.\d%\)\. Write at least /);
+			assert.doesNotMatch(error.message, /e4–e4/, "only the spans that fell short are named");
+			return true;
+		},
+	);
+	assert.equal(appended.length, 0, "a refused call must append nothing");
+	assert.equal(receipts(), 0, "and send no record");
+
+	// The model's next message retries with the same ids and no new menu. The second try lands
+	// whatever its size: a model that stalls under the floor would otherwise never fold at all.
+	message();
+	await call({ spans: [{ from: "e1", to: "e2", summary: "still short" }] });
+	assert.equal(appended.length, 1);
+	assert.ok(appended[0]!.tokensAfter < appended[0]!.tokensBefore * 0.03);
+
+	// A fold landed, so the next one gets its own first try.
+	message();
+	await call({});
+	message();
+	await assert.rejects(
+		call({ spans: [{ from: "e3", to: "e3", summary: "short" }] }),
+		/^Error: Nothing was compacted/,
+	);
+
+	// A run that ends clears the refusal too: the next run starts with a first try.
+	emit("agent_end", {});
+	message();
+	await call({});
+	message();
+	await assert.rejects(
+		call({ spans: [{ from: "e3", to: "e3", summary: "short" }] }),
+		/^Error: Nothing was compacted/,
+	);
+	message();
+	await call({ spans: [{ from: "e3", to: "e3", summary: "short again" }] });
+	assert.equal(appended.length, 2);
+});
+
 test("§2a: a span is refused when the list it names is no longer in the view", async () => {
 	const { call, entries } = driveCompact();
 	await call({});
@@ -682,7 +765,7 @@ test("560d replay: after a fold every later view carries the stored receipt, no 
 		"the menu example must name spans, or the model omits the wrapper again",
 	);
 
-	const result = await call({ spans: [{ from: "e1", to: "e2", summary: "earlier work" }] });
+	const result = await call({ spans: [{ from: "e1", to: "e2", summary: long("earlier work") }] });
 	assert.equal(appended.length, 1);
 	// Pin the fold between the old nudge and the next answers, whatever the wall clock says.
 	appended[0]!.timestamp = 100;

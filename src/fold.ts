@@ -2,7 +2,7 @@ import { type ExtensionAPI, estimateTokens, type SessionEntry } from "@earendil-
 import { type Static, Type } from "typebox";
 import { originalPath, writeOriginal } from "./dump.ts";
 import { log } from "./log.ts";
-import { buildMenu, type Menu, type MenuEntry } from "./menu.ts";
+import { buildMenu, type Menu, type MenuEntry, SUMMARY_FLOOR, SUMMARY_TARGET } from "./menu.ts";
 import type { NudgeDetails } from "./nudge.ts";
 import {
 	NUDGE_CUSTOM_TYPE,
@@ -62,6 +62,9 @@ export interface FoldState {
 	/** This run exists only to compact: our request arrived when no task was in progress, and nothing
 	 * has asked for work since. A fold in such a run ends it (§7b). Kept by `trackRun`. */
 	compactOnly: boolean;
+	/** A fold was refused for size, and the next attempt is accepted whatever its size (§5). Cleared
+	 * when a fold lands and when the run ends. */
+	refused: boolean;
 }
 
 // The one tool (§6). No arguments returns the menu; arguments fold. Arguments are Pi's own parse and
@@ -104,6 +107,29 @@ export function registerFold(pi: ExtensionAPI, state: FoldState): void {
 				);
 			}
 
+			// §5. A summary under the floor is refused whole, before anything is written. Nothing changed,
+			// so the list stays current for the retry: without that, the model's next message would
+			// have to pay for the whole menu again just to resend the same spans. Once only: the second
+			// try lands whatever its size. Replayed live, one model kept raising its summaries after
+			// each refusal but stalled at 2–3%, so a refusal that repeats never lands at all.
+			const short = state.refused
+				? []
+				: planned.filter(({ record }) => record.tokensAfter < record.tokensBefore * SUMMARY_FLOOR);
+			if (short.length > 0) {
+				state.refused = true;
+				state.menuAt = assistants(view);
+				throw new Error(
+					tooShort(
+						short.map(({ record, fold }) => ({
+							from: fold.from,
+							to: fold.to,
+							before: record.tokensBefore,
+							after: record.tokensAfter,
+						})),
+					),
+				);
+			}
+
 			// The log goes first. `appendFileSync` can throw, and after the writes below that would
 			// report a failure for a fold which had in fact been applied.
 			for (const { record } of planned) {
@@ -120,6 +146,7 @@ export function registerFold(pi: ExtensionAPI, state: FoldState): void {
 			// file was never written is a summary pointing at nothing.
 			for (const { record, taken } of planned) writeOriginal(sessionId, record.id, taken);
 			applyAll(pi, planned);
+			state.refused = false;
 			state.menu = undefined;
 			state.folded = true;
 			// One text per call (§4, §4b), said twice: in the result, which leaves the view with its
@@ -184,7 +211,29 @@ export function trackRun(pi: ExtensionAPI, state: FoldState): void {
 	pi.on("agent_end", () => {
 		state.working = false;
 		state.compactOnly = false;
+		state.refused = false;
 	});
+}
+
+/** MODEL-FACING-TEXT.md §5, the short-summary row. Exact counts, and characters beside tokens: Pi's
+ * estimate is a quarter of the characters, and characters are what the model can judge as it
+ * writes. One line per span that fell short; the ones that did not are not named. */
+export function tooShort(short: { from: string; to: string; before: number; after: number }[]): string {
+	const n = (value: number) => value.toLocaleString("en-US");
+	const lines = short.map(({ from, to, before, after }) => {
+		const least = Math.ceil(before * SUMMARY_FLOOR);
+		const aim = Math.round(before * SUMMARY_TARGET);
+		const share = ((after / before) * 100).toFixed(1);
+		return (
+			`- ${from}–${to}: ${n(after)} tokens for ${n(before)} (${share}%). ` +
+			`Write at least ${n(least)} tokens (${n(least * 4)} characters), aim for ${n(aim)}.`
+		);
+	});
+	return [
+		`Nothing was compacted: a summary must be at least ${Math.round(SUMMARY_FLOOR * 100)}% of the tokens it replaces.`,
+		...lines,
+		"Call compact again with the same spans and longer summaries.",
+	].join("\n");
 }
 
 /** MODEL-FACING-TEXT.md §5. Each failure names the id and the next action; none of them returns the menu. */

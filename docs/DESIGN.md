@@ -706,16 +706,27 @@ guarantee the instruction gives for free.
 One measurement survives, in `fold.ts`, with no decision attached: if a summary is not
 smaller than the content it replaces, log it. The fold still happens.
 
+**One check refuses: size.** The menu asks for a summary of 5% of the span's tokens, and
+`compact` refuses the whole call if any summary is under 3%, before anything is written
+(MODEL-FACING-TEXT.md §3a, §5). Both numbers are constants in `menu.ts`, and the menu text is
+built from them. The instruction used to say *"whatever length the span needs"*; one model read
+that as "short" on every fold — 0.1–0.4%, 112K into 110 tokens — while its span held eleven times
+more of your own words than the summary (§17, row 19.85). A refused call keeps the menu's ids
+current for one more message, since it changed nothing, so the retry does not pay for a second
+menu. **The refusal happens once:** the next try lands whatever its size, until a fold lands or
+the run ends (§17, row 19.86). The check reads Pi's estimate on both sides, so the ratio is the estimator's, not a
+tokenizer's.
+
 ---
 
 ## 11. Module layout
 
 | File | Purpose | Lines |
 |---|---|---|
-| `fold.ts` | the one tool: the menu, the spans, the records, the receipt, ending a run that exists only to compact | 310 |
-| `menu.ts` | even-count partition, rendering | 178 |
+| `fold.ts` | the one tool: the menu, the spans, the records, the receipt, the size floor, ending a run that exists only to compact | 359 |
+| `menu.ts` | even-count partition, rendering, the summary size target and floor | 190 |
 | `emergency.ts` | `session_before_compact`: `/compact`, and the overflow cut | 121 |
-| `index.ts` | event wiring, tool registration, the growth clock | 137 |
+| `index.ts` | event wiring, tool registration, the growth clock | 138 |
 | `project.ts` | fold projection, block edit, pair removal, nudge retirement, the fold text | 169 |
 | `dump.ts` | write the transcripts to the session cache dir | 86 |
 | `nudge.ts` | the three nudge texts, and the one place they are sent from | 96 |
@@ -726,7 +737,7 @@ smaller than the content it replaces, log it. The fold still happens.
 | `status.ts` | `setStatus` line | 15 |
 | `view.ts` | build the view from entries | 14 |
 | `log.ts` | one JSON line writer | 13 |
-| **Total** | **1,313**, against a first estimate of ~830. | |
+| **Total** | **1,375**, against a first estimate of ~830. | |
 
 Against ~9,950 lines of source in the original.
 
@@ -734,12 +745,13 @@ Against ~9,950 lines of source in the original.
 
 ## 12. The test suite
 
-**Twelve tests, 750 lines.** They build their own fixtures and depend on nothing outside the
+**Thirteen tests, 833 lines.** They build their own fixtures and depend on nothing outside the
 repository: block records read back from the branch and absorbed correctly, the status line,
-the model-facing strings §4, §4b, §6, §7, §7a and §7b read out of `docs/MODEL-FACING-TEXT.md`
-rather than copied, the one token format, three that drive the real tool through a stub session —
-one for the three defects the list of spans must not bring back, one for a list of ids that is
-no longer current (§6), one for which folds end the run (§7b) — and one that drives the real
+the model-facing strings §3a, §4, §4b, §5 (the size refusal), §6, §7, §7a and §7b read out of
+`docs/MODEL-FACING-TEXT.md` rather than copied, the one token format, four that drive the real
+tool through a stub session — one for the three defects the list of spans must not bring back,
+one for a list of ids that is no longer current (§6), one for the size floor, its retry and its once-only refusal, one
+for which folds end the run (§7b) — and one that drives the real
 event handlers through `/compact` and the growth clock (§8).
 
 **There used to be forty-four.** The other forty replayed a corpus of 25 recorded session
@@ -898,7 +910,7 @@ that runs.
 | A fold that would replace nothing is refused | the stale-menu case, reproduced and tested |
 | Blocks absorb correctly | chains of three, already-absorbed ids, entries already gone |
 | Replay is deterministic | same log twice, identical state |
-| Model-facing strings match this project's contract | §4, §4b, §6, §7, §7a and §7b are read from `docs/MODEL-FACING-TEXT.md` on every run, not copied; §1, §2, §3a, §3b, §5, §8 and §9 were checked the same way by the deleted tests |
+| Model-facing strings match this project's contract | §3a, §4, §4b, the §5 size refusal, §6, §7, §7a and §7b are read from `docs/MODEL-FACING-TEXT.md` on every run, not copied; §1, §2, §3b, the rest of §5, §8 and §9 were checked the same way by the deleted tests |
 
 Across seven audit rounds, roughly **250 mutations** were run against the tree; the
 survivors are listed in §17 and each is either equivalent or now covered.
@@ -1007,6 +1019,8 @@ fires at a sensible moment.
 | 19.50 | "menu tokens are excluded from the growth measurement" | they are not; the menu result just leaves the view next round | the arithmetic was wrong (20K, not 200K) and Pi's single number has nothing to subtract from |
 | 19.51 | A "hold the summary until no call is pending" condition | complete the closure's transitivity instead | the mid-round case becomes unrepresentable rather than handled — C4 |
 | 19.52 | "excluding compaction entries makes coverage contiguous" | it does not; coverage can split regardless | a span with no compaction entry, contiguous when folded, splits when a newer compaction hoists past an older one |
+| 19.86 | Every fold under 3% is refused | the first is; the next try lands whatever its size, until a fold lands or the run ends | live replay, three runs on a 570K session: refused summaries grew from 0.5–1.2% to 1.2–2.3% and stalled at 2–3%; with every try refused, no run folded anything in eight calls. One refusal keeps most of the gain and always lands |
+| 19.85 | *"Whatever length the span needs"*, and no check on size | the menu asks for 5% of the span's tokens; `compact` refuses a summary under 3%, and the refused call keeps the menu current for the retry | live: one model wrote 0.1–0.4% on every fold across three clones — 192K into 334 tokens, 112K into 110 — while the span held 61 of your messages, 14,802 characters, against a 1,336-character summary; another model wrote 1.3–8.3% under the same words |
 | 19.84 | The last nudge is a follow-up, and a fold ends the run whenever our request is the newest ask in the view | every nudge is a steer; a fold ends the run only when our request arrived with no task in progress, read from Pi's turn, message and run events | a follow-up waits until the model stops, so the last warning before the window fills waited behind the rest of the task; as a steer it can land mid-task, where ending the run would cut your work short. The view could not tell the two apart, and it misreads a run that ended on a terminating fold as still working |
 | 19.83 | After a `/compact` fold, Pi asks the model for one more reply | the folding call returns `terminate: true` when the run exists only to compact (`/compact` or the last nudge) | live: the model read back all three transcripts it had just written; replayed six times per variant it carried on in 4 of 6, and no wording change helped — keeping the request in view made it compact again, dropping *carry on* made it carry on in 6 of 6. The receipt is appended at the end of the turn, not queued as a follow-up, so it does not restart the run |
 | 19.82 | One receipt per landed block | one receipt per `compact` call, a line per block, the folder and the closing sentence once | live: a six-span call put six notes in the view, each repeating the stop sentence and the folder path — ~290 tokens on every later request, now that receipts are never retired, for ~107 |
