@@ -94,7 +94,7 @@ Everything in §17 is what those reviews changed.
 | 19 | **The view is built from session entries, not from `event.messages`** (§3). Forced by a measured fact, see §17, row 19.1. |
 | 20 | *(superseded by 21 — there is no meter of our own; `ctx.getContextUsage()` is the number.)* |
 | 21 | **No meter of our own.** `ctx.getContextUsage()` is the context number (§7). |
-| 22 | The newest **failed** compact pair stays visible (§6). |
+| 22 | A **failed** compact pair stays visible until a fold lands, and is retired by it (§6). |
 | 23 | No `/acp` command. One `setStatus` line in Pi's footer (§6). |
 | 24 | *(superseded by 27 — there is no protected content.)* |
 | 25 | The menu partitions by round count and treats block summaries as ordinary entries (§5). |
@@ -438,10 +438,10 @@ After a **successful** fold:
   for us, and we read them from the record, not from the text. Nothing parses this wrapper
   back — the projection rebuilds it from the record on every request.
 
-### Failures stay visible, untouched
+### Failures stay visible until a fold lands
 
-**A failed compact call and its result are left exactly as they are.** No collapsing, no
-one-line replacement, no bookkeeping.
+**A failed compact call and its result are left exactly as they are, and the next fold
+retires them with its own call.** No collapsing, no one-line replacement, no bookkeeping.
 
 acp-kernel ships `KEEP_LAST_ORPHANED = 2` with the comment: *"failures must stay observable
 or a deterministic model re-issues the same no-op compact forever, pinned at a fixed point
@@ -451,6 +451,18 @@ is machinery for a case that should barely exist: the two causes of mass failure
 original were stale refs and weak models, and both are excluded here (§17, row 19.36).
 
 If the log ever shows failed calls accumulating, we add the collapse then (C10).
+
+**A landed fold is what ends a failure's life**, on the rule the nudges already age by: it
+existed when the fold landed, so the model has acted on it (`staleFailedCalls`). Nothing is
+hidden while the model still has to answer it — the retry is the very next message, and
+`KEEP_LAST_ORPHANED = 0` above is what hiding it costs. Afterwards it is worse than dead
+weight: the refusal ends *"Nothing was saved. Send every span listed here again, in one
+call"*, which the fold has just made false, and it is the only compacting instruction left
+in the view, because a landed fold takes its own call away (decision 5). Live, on GLM 5.3
+Flash: the retry landed at 01:02:45, and at 01:04:49 the model re-sent all four spans with
+no thinking at all; the stale-id refusal that answered it then read as an order to compact,
+and it folded a fifth span its own thinking had called *"nothing meaningful"*. One nudge,
+three folds. The rejected summaries had also sat in the context at ~3K tokens since.
 
 ### Two texts — one for the model, one for you
 
@@ -1030,6 +1042,7 @@ fires at a sensible moment.
 | 19.50 | "menu tokens are excluded from the growth measurement" | they are not; the menu result just leaves the view next round | the arithmetic was wrong (20K, not 200K) and Pi's single number has nothing to subtract from |
 | 19.51 | A "hold the summary until no call is pending" condition | complete the closure's transitivity instead | the mid-round case becomes unrepresentable rather than handled — C4 |
 | 19.52 | "excluding compaction entries makes coverage contiguous" | it does not; coverage can split regardless | a span with no compaction entry, contiguous when folded, splits when a newer compaction hoists past an older one |
+| 19.91 | A failed compact pair stays in the view for the rest of the session | a fold retires the failures older than it, with its own call | live on GLM 5.3 Flash, one nudge and three folds: the refusal's *"Nothing was saved. Send every span listed here again"* outlived the retry that landed at 01:02:45, and at 01:04:49 the model re-sent all four spans with no thinking; the stale-id answer to that then read as an order, and it folded a span it had just called *"nothing meaningful"*. 3K tokens of rejected summaries had stayed too |
 | 19.90 | The instruction tells the model the user's messages are attached, so it does not repeat them | it asks again for the user's intent and corrections to be fully preserved | the words are kept by code (19.88), so the line is free to ask for what the code cannot keep: what the user meant and changed. The user's own edit to MODEL-FACING-TEXT.md |
 | 19.89 | The refusal names only the spans that fell short | it names every span, telling the long enough ones to be sent again unchanged, and says nothing was saved | replayed live: one of three spans fell short, the model resent that one alone as its second try, it landed, and the other two — about 230K — were never folded. A first wording, *Long enough, keep it*, was read as "leave it out": three of four replays dropped a span from the retry |
 | 19.88 | The model is told to keep the user's messages verbatim | the fold attaches them itself, stored on the record, shown under the summary, counted toward its size | replayed three times on the medi session with the verbatim line: 36 of 200 typed messages kept whole, 153 missing, among them short orders such as *add logcli yq duckdb httpie into the docker image*. What the user asked for is the one part of a span a summary may not lose, and it is ours to copy |

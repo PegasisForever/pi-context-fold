@@ -15,6 +15,7 @@ import {
 	receiptText,
 	shortTokens,
 	summaryMessage,
+	TOOL_NAME,
 } from "../src/project.ts";
 import { liveBlocks } from "../src/state.ts";
 import { setFoldStatus } from "../src/status.ts";
@@ -189,6 +190,61 @@ test("A1: a fold retires every nudge older than it, and keeps newer ones", () =>
 	assert.deepEqual(
 		fresh.map((slot) => slot.entryId ?? slot.block?.id),
 		["e-u1", "e-n1", "e-a1", "e-n2", "e-u2"],
+	);
+});
+
+/**
+ * §6: a refused fold stays visible until a fold lands, and goes with it. While it is the last word
+ * on compacting the model needs it — hidden, a model reissued the same dead call 3,849 times
+ * (§17, row 19.17). Once a fold has landed the refusal's "Nothing was saved. Send every span
+ * listed here again" is false, and it is the only compacting instruction left, because the fold
+ * takes its own call away. One live session obeyed it two minutes after its retry landed.
+ */
+test("§6: a fold retires the compact calls that failed before it, and keeps later ones", () => {
+	// A fold call as the model sends it: its thinking, then the call carrying the whole summary.
+	const attempt = (callId: string, timestamp: number): Msg =>
+		({
+			role: "assistant",
+			content: [
+				{ type: "thinking", thinking: "which span" },
+				{
+					type: "toolCall",
+					id: callId,
+					name: TOOL_NAME,
+					arguments: { spans: [{ from: "e1", to: "e44", summary: "the whole summary" }] },
+				},
+			],
+			timestamp,
+		}) as Msg;
+	const refusal = (callId: string, timestamp: number): Msg =>
+		({
+			role: "toolResult",
+			toolCallId: callId,
+			toolName: TOOL_NAME,
+			content: [{ type: "text", text: "Nothing was compacted: a summary must be at least 3%" }],
+			isError: true,
+			timestamp,
+		}) as Msg;
+	const view = [
+		{ entryId: "e-a1", message: attempt("call-refused", 100) },
+		{ entryId: "e-r1", message: refusal("call-refused", 110) },
+		{ entryId: "e-a2", message: attempt("call-landed", 150) },
+		{ entryId: "e-a3", message: attempt("call-later", 300) },
+		{ entryId: "e-r2", message: refusal("call-later", 310) },
+	];
+	const folded = block({ id: "b1", entryIds: [], dropToolCallIds: ["call-landed"], timestamp: 200 });
+
+	const slots = projectSlots(view, [folded]);
+	const kept = slots.map((slot) => slot.entryId ?? slot.block?.id);
+	// The refused pair before the fold is gone whole, and the call that landed took its own message
+	// with it: both were call-only once their call went. The later failure stays.
+	assert.deepEqual(kept, ["e-a3", "e-r2"]);
+
+	// With nothing folded yet, every failure stays: the model has not answered any of them.
+	const fresh = projectSlots(view, []);
+	assert.deepEqual(
+		fresh.map((slot) => slot.entryId ?? slot.block?.id),
+		["e-a1", "e-r1", "e-a2", "e-a3", "e-r2"],
 	);
 });
 

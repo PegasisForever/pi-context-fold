@@ -430,7 +430,8 @@ entry.
 **Never return the menu as an error result.** It costs ~5K tokens to answer a malformed
 call, and the model can ask for it.
 
-Failed calls and their results stay in the conversation untouched. No collapsing.
+Failed calls and their results stay in the conversation untouched, until a fold lands and
+takes the ones older than it away with its own call. No collapsing.
 
 ---
 

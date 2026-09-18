@@ -15,10 +15,11 @@ export const RECEIPT_CUSTOM_TYPE = "pi-context-fold-receipt";
 export const NUDGE_CUSTOM_TYPE = "pi-context-fold";
 
 /** Covered entries out, each block's summary at its first covered entry, retired compact pairs out,
- * pre-fold nudges out (§6, §8). Pure: no I/O, no decisions (D2). The retired calls are derived
- * here, not passed in: every caller wants the same ones and a caller that forgot would put a dead
- * 5K menu back in the view. A nudge older than the newest fold existed when that fold landed, so
- * the model has acted on it and its numbers are stale; the next reminder arrives on growth anyway.
+ * pre-fold nudges and pre-fold failures out (§6, §8). Pure: no I/O, no decisions (D2). The retired
+ * calls are derived here, not passed in: every caller wants the same ones and a caller that forgot
+ * would put a dead 5K menu back in the view. A nudge older than the newest fold existed when that
+ * fold landed, so the model has acted on it and its numbers are stale; the next reminder arrives on
+ * growth anyway. A failed call older than the newest fold goes for the same reason.
  * Receipts are not in that list: they are the record of what the model did, and a record that
  * expires is a record the model can be asked to act without (§4b). */
 export function projectSlots(view: ViewItem[], blocks: FoldBlock[]): Slot[] {
@@ -26,8 +27,10 @@ export function projectSlots(view: ViewItem[], blocks: FoldBlock[]): Slot[] {
 	for (const block of blocks) {
 		for (const entryId of block.entryIds) covering.set(entryId, block);
 	}
+	const newest = newestFold(blocks);
 	const goneCalls = new Set(staleMenuCalls(view));
-	const goneNudges = staleNudgeEntries(view, blocks);
+	const goneNudges = staleNudgeEntries(view, newest);
+	for (const callId of staleFailedCalls(view, newest)) goneCalls.add(callId);
 	for (const block of blocks) {
 		for (const callId of block.dropToolCallIds) goneCalls.add(callId);
 	}
@@ -49,7 +52,7 @@ export function projectSlots(view: ViewItem[], blocks: FoldBlock[]): Slot[] {
 
 /** The compact calls whose menu result has been in the view for a round. The menu costs ~5K and is
  * dead once the model has answered it, whether or not it folded (§8); a failed fold is not a menu
- * call, so failures stay visible untouched (§6). */
+ * call, and is retired by the next fold instead (`staleFailedCalls`, §6). */
 export function staleMenuCalls(view: ViewItem[]): string[] {
 	const stale: string[] = [];
 	let served: string[] = [];
@@ -66,14 +69,20 @@ export function staleMenuCalls(view: ViewItem[]): string[] {
 	return stale;
 }
 
-/** A1: every nudge older than the newest fold. It existed when that fold landed, so the model has
- * acted on it. No span mapping and no new record: creation order is enough, and a spontaneous fold
- * retires the same way. A folded nudge still anchors its summary at its loop above. */
-export function staleNudgeEntries(view: ViewItem[], blocks: FoldBlock[]): Set<string> {
+/** When the newest live block landed, or 0 when nothing has been folded. The one clock the two
+ * retirement rules below age against. */
+export function newestFold(blocks: FoldBlock[]): number {
 	let newest = 0;
 	for (const block of blocks) {
 		if (block.timestamp > newest) newest = block.timestamp;
 	}
+	return newest;
+}
+
+/** A1: every nudge older than the newest fold. It existed when that fold landed, so the model has
+ * acted on it. No span mapping and no new record: creation order is enough, and a spontaneous fold
+ * retires the same way. A folded nudge still anchors its summary at its loop above. */
+export function staleNudgeEntries(view: ViewItem[], newest: number): Set<string> {
 	const stale = new Set<string>();
 	if (newest === 0) return stale;
 	for (const item of view) {
@@ -84,6 +93,29 @@ export function staleNudgeEntries(view: ViewItem[], blocks: FoldBlock[]): Set<st
 			message.timestamp < newest
 		)
 			stale.add(item.entryId);
+	}
+	return stale;
+}
+
+/** Every compact call that failed before the newest fold, by call id, so its whole pair goes (§6).
+ * A failure stays visible while it is the last word on compacting — hidden, a model reissues the
+ * same dead call, 3,849 times in one recorded run (§17, row 19.17). A landed fold ends that: the
+ * refusal says "Nothing was saved. Send every span listed here again", which is then false, and it
+ * is the only compacting instruction left in the view once the fold takes its own call away. One
+ * live session followed it two minutes after its retry landed, resent all four spans, and folded a
+ * fifth span it had judged not worth folding; the rejected summaries had cost 3K tokens since. */
+export function staleFailedCalls(view: ViewItem[], newest: number): string[] {
+	const stale: string[] = [];
+	if (newest === 0) return stale;
+	for (const item of view) {
+		const message = item.message;
+		if (
+			message.role === "toolResult" &&
+			message.toolName === TOOL_NAME &&
+			message.isError &&
+			message.timestamp < newest
+		)
+			stale.push(message.toolCallId);
 	}
 	return stale;
 }
