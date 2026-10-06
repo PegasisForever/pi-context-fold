@@ -73,6 +73,8 @@ export function messageText(message: Msg): string {
 		case "branchSummary":
 		case "compactionSummary":
 			return message.summary;
+		case "system":
+			return "";
 	}
 }
 

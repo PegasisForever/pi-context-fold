@@ -7,6 +7,10 @@ export function buildView(entries: SessionEntry[]): ViewItem[] {
 	const items: ViewItem[] = [];
 	for (const entry of entries) {
 		for (const message of sessionEntryToContextMessages(entry)) {
+			// Pi 0.86+ stores the prompt and tool set as `system` messages in the transcript. The
+			// `context` handler must not return them (Pi puts the current one back in front), and a
+			// fold must never take one away, so they stay out of the view.
+			if (message.role === "system") continue;
 			items.push({ entryId: entry.id, message });
 		}
 	}

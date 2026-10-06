@@ -1,6 +1,6 @@
 import type { SessionContext } from "@earendil-works/pi-coding-agent";
 
-// Pi augments `CustomAgentMessages` in `core/messages.ts`, so this is the full seven-role union and
+// Pi augments `CustomAgentMessages` in `core/messages.ts`, so this is the full eight-role union (`system` since pi 0.86) and
 // a `switch` on `role` is exhaustive. `test/replay.test.ts` proves both, in types and on the corpus.
 export type Msg = SessionContext["messages"][number];
 
