@@ -165,13 +165,16 @@ output (`extensions/runner.js:791`). Any positional correspondence is gone befor
 called.
 
 ```ts
-const entries  = ctx.sessionManager.buildContextEntries();     // what Pi would send
-const view     = entries.flatMap(sessionEntryToContextMessages); // Pi's own projector
-// every message in `view` has a known entry, because we just projected it
+const entries  = ctx.sessionManager.buildSessionProjection().entries; // what Pi would send
+const view     = entries.flatMap((entry) => entry.messages);          // Pi's own projection
+// every message in `view` has a known entry: each projected entry names its source entry
 ```
 
-Both functions are exported from the package root, so the projection cannot drift from
-Pi's.
+The projection is Pi's own, so it cannot drift from what Pi sends. It is not
+`buildContextEntries()` with `sessionEntryToContextMessages`: those ignore Pi's
+`context_edit` entries. Pi's overflow retry removes the truncated answer with one, and the raw
+entries put it back as the last message, so Gemini refused the retry with "Requests ending with a
+model turn are not supported" (2026-10-08).
 
 What this keeps from the original's approach, and what it drops: the original also rebuilds
 from the log, and for the same reason — its README says so plainly. But it then flattens
@@ -184,7 +187,7 @@ message objects; we drop some, edit one block inside others, and return the arra
 
 | Need | Source | Why |
 |---|---|---|
-| the outgoing view | `buildContextEntries()` | it is exactly what Pi would send |
+| the outgoing view | `buildSessionProjection()` | it is exactly what Pi would send, context edits applied |
 | block records, round ordinals | `getBranch()` | entries before a compaction cut are dropped from `buildContextEntries()`, including our own `custom` records |
 
 **Known consequence.** Rebuilding overrides any `context` handler that ran before us. On

@@ -3,7 +3,13 @@ import { mkdirSync, mkdtempSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
-import type { SessionEntry } from "@earendil-works/pi-coding-agent";
+import {
+	buildContextEntries,
+	buildSessionProjection,
+	type ProjectedSessionEntry,
+	type SessionEntry,
+	sessionEntryToContextMessages,
+} from "@earendil-works/pi-coding-agent";
 import { registerFold, tooShort, trackRun } from "../src/fold.ts";
 import contextFold from "../src/index.ts";
 import { INSTRUCTION } from "../src/menu.ts";
@@ -89,6 +95,14 @@ function block(fields: Partial<FoldBlock>): FoldBlock {
 		timestamp: 1_760_000_000_000,
 		...fields,
 	};
+}
+
+/** Pi's projection of entries with no parent chain and no edits: each entry's own messages. */
+function projected(entries: SessionEntry[]): ProjectedSessionEntry[] {
+	return entries.map((sourceEntry) => ({
+		sourceEntry,
+		messages: sessionEntryToContextMessages(sourceEntry),
+	}));
 }
 
 function customEntry(id: string, customType: string, data: unknown): SessionEntry {
@@ -441,7 +455,12 @@ test("/compact restarts the growth clock at the next measurement, and the clock 
 	const ctx = {
 		getContextUsage: () => ({ tokens, contextWindow: 1_048_576 }),
 		ui: { setStatus: () => {} },
-		sessionManager: { getBranch: () => [], buildContextEntries: () => [], getSessionId: () => "s" },
+		sessionManager: {
+			getBranch: () => [],
+			buildContextEntries: () => [],
+			buildSessionProjection: () => ({ entries: [] }),
+			getSessionId: () => "s",
+		},
 	};
 	const kinds = () =>
 		sent.map((text) => (text.includes("The user has requested") ? "request" : "reminder"));
@@ -567,7 +586,7 @@ function driveCompact() {
 	};
 	const ctx = {
 		sessionManager: {
-			buildContextEntries: () => entries,
+			buildSessionProjection: () => ({ entries: projected(entries) }),
 			getBranch: () => appended.map((one, i) => customEntry(`k${i}`, "fold-block", one)),
 			getSessionId: () => "test-session",
 		},
@@ -836,7 +855,7 @@ test("§6: a fold stores the user's messages word for word and shows them under 
 
 	const shown = (): string =>
 		projectSlots(
-			buildView(entries),
+			buildView(projected(entries)),
 			liveBlocks({
 				getBranch: () => appended.map((one, i) => customEntry(`k${i}`, "fold-block", one)),
 			}),
@@ -923,7 +942,7 @@ test("560d replay: after a fold every later view carries the stored receipt, no 
 		} as unknown as SessionEntry);
 	const pairsIntact = (): void => {
 		const calls = new Set<string>();
-		for (const slot of projectSlots(buildView(entries), appended)) {
+		for (const slot of projectSlots(buildView(projected(entries)), appended)) {
 			const message = slot.message;
 			if (message.role === "assistant") {
 				for (const part of message.content) if (part.type === "toolCall") calls.add(part.id);
@@ -933,7 +952,7 @@ test("560d replay: after a fold every later view carries the stored receipt, no 
 		}
 	};
 	const receipt = (): string | undefined => {
-		for (const slot of projectSlots(buildView(entries), appended)) {
+		for (const slot of projectSlots(buildView(projected(entries)), appended)) {
 			const message = slot.message;
 			if (message.role === "custom" && message.customType === RECEIPT_CUSTOM_TYPE) {
 				const content = message.content;
@@ -945,7 +964,7 @@ test("560d replay: after a fold every later view carries the stored receipt, no 
 	const receiptEntry = (): SessionEntry | undefined =>
 		entries.find((e) => e.type === "custom_message" && e.customType === RECEIPT_CUSTOM_TYPE);
 	const hasNudge = (): boolean =>
-		projectSlots(buildView(entries), appended).some(
+		projectSlots(buildView(projected(entries)), appended).some(
 			(slot) => slot.message.role === "custom" && slot.message.customType === NUDGE_CUSTOM_TYPE,
 		);
 
@@ -969,8 +988,70 @@ test("560d replay: after a fold every later view carries the stored receipt, no 
 	assert.match(receipt() ?? "", /Carry on with the user's work\./);
 	assert.ok(receiptEntry() !== undefined, "in the view and in the log");
 	assert.ok(
-		projectSlots(buildView(entries), appended).some((slot) => slot.block?.id === "b1"),
+		projectSlots(buildView(projected(entries)), appended).some((slot) => slot.block?.id === "b1"),
 		"the summary stands beside its receipt",
 	);
 	pairsIntact();
+});
+
+test("§3: the view honours Pi's context edits, so the overflow retry does not end on the dropped answer", () => {
+	const at = "2026-10-08T21:46:00.000Z";
+	const message = (id: string, parentId: string | null, body: Record<string, unknown>): SessionEntry =>
+		({
+			type: "message",
+			id,
+			parentId,
+			timestamp: at,
+			message: { timestamp: 0, ...body },
+		}) as unknown as SessionEntry;
+	const entries: SessionEntry[] = [
+		message("u", null, { role: "user", content: "write the report" }),
+		message("a1", "u", {
+			role: "assistant",
+			stopReason: "toolUse",
+			content: [{ type: "toolCall", id: "c1", name: "read", arguments: {} }],
+		}),
+		message("r1", "a1", {
+			role: "toolResult",
+			toolCallId: "c1",
+			toolName: "read",
+			content: [{ type: "text", text: "ok" }],
+		}),
+		message("a2", "r1", {
+			role: "assistant",
+			stopReason: "length",
+			content: [{ type: "text", text: "cut off" }],
+		}),
+		// What Pi appends before its overflow retry: the truncated answer, removed from the context.
+		{
+			type: "context_edit",
+			id: "x",
+			parentId: "a2",
+			timestamp: at,
+			targetId: "a2",
+			replacement: null,
+		} as unknown as SessionEntry,
+	];
+	const handlers: Record<string, ((event: unknown, ctx: unknown) => unknown)[]> = {};
+	const pi = {
+		on: (name: string, handler: (event: unknown, ctx: unknown) => unknown) => {
+			handlers[name] = [...(handlers[name] ?? []), handler];
+		},
+		registerTool: () => {},
+		registerMessageRenderer: () => {},
+	};
+	contextFold(pi as never);
+	const ctx = {
+		sessionManager: {
+			getBranch: () => entries,
+			buildContextEntries: () => buildContextEntries(entries, "x"),
+			buildSessionProjection: () => buildSessionProjection(entries, "x"),
+		},
+	};
+	const result = handlers.context?.[0]?.({}, ctx) as { messages: Msg[] };
+	assert.deepEqual(
+		result.messages.map((one) => one.role),
+		["user", "assistant", "toolResult"],
+		"the request must end on the tool result, not on the answer Pi removed",
+	);
 });

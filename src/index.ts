@@ -45,7 +45,7 @@ export default function contextFold(pi: ExtensionAPI): void {
 
 	pi.on("context", (_event, ctx) => ({
 		messages: projectSlots(
-			buildView(ctx.sessionManager.buildContextEntries()),
+			buildView(ctx.sessionManager.buildSessionProjection().entries),
 			liveBlocks(ctx.sessionManager),
 		).map((slot) => slot.message),
 	}));

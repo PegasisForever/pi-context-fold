@@ -80,7 +80,7 @@ export function registerFold(pi: ExtensionAPI, state: FoldState): void {
 			"Compact spans of the conversation into summaries you write, saving the full transcription to a file, freeing context. Always call `compact()` with no arguments to list what can be compacted, before you compact a span.",
 		parameters,
 		execute: async (toolCallId, params, _signal, _onUpdate, ctx) => {
-			const view = buildView(ctx.sessionManager.buildContextEntries());
+			const view = buildView(ctx.sessionManager.buildSessionProjection().entries);
 			const blocks = liveBlocks(ctx.sessionManager);
 			if (noArguments(params)) {
 				state.menu = buildMenu(view, blocks);

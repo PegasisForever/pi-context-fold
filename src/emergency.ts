@@ -46,7 +46,7 @@ export function registerEmergency(pi: ExtensionAPI, config: Config, state: FoldS
 }
 
 function recover(event: SessionBeforeCompactEvent, ctx: ExtensionContext): CompactionResult {
-	const view = buildView(ctx.sessionManager.buildContextEntries());
+	const view = buildView(ctx.sessionManager.buildSessionProjection().entries);
 	const blocks = liveBlocks(ctx.sessionManager);
 	const slots = projectSlots(view, blocks);
 	const at = halfway(slots);
