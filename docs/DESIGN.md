@@ -607,10 +607,14 @@ on every nudge to count it, and the model gets the real list from `compact()` a 
 Cadence: at most one nudge per round, and none in the round straight after a fold. Keyed to
 the round, never to the user prompt.
 
-**The last nudge is different.** A nudge needs `nudgeGrowthTokens` of growth to fire, so once
-`contextWindow − predicted` falls below that, no second nudge can arrive before the overflow
-cut. That one says so and asks for the fold. It is a fact about the arithmetic, not a second
-threshold to tune.
+**The last nudge is different.** A growth nudge needs `nudgeGrowthTokens` of growth to fire, so
+once `contextWindow − predicted` falls below that, no growth nudge can arrive before the overflow
+cut. The last nudge is therefore sent as soon as the window enters that zone, whatever the growth
+since the previous nudge, and once: after it the baseline sits in the zone, and a fold that takes
+the context back out re-arms it. It says so and asks for the fold. It is a fact about the
+arithmetic, not a second threshold to tune. It used to wait for growth as well, and a session
+nudged at 832K of a 1,048K window got nothing more until the window was full: the next growth
+nudge needed 1,032K (Medi GPT, 2026-10-08).
 
 **Only the last nudge starts a turn of its own**, with `triggerTurn: true`; an ordinary nudge
 never does. **Every nudge is read at the model's next call, mid-task or not.** The last nudge

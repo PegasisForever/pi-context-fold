@@ -1055,3 +1055,52 @@ test("§3: the view honours Pi's context edits, so the overflow retry does not e
 		"the request must end on the tool result, not on the answer Pi removed",
 	);
 });
+
+/**
+ * MODEL-FACING-TEXT.md §7a. Medi GPT, 2026-10-08: the 832K nudge set the baseline, the next growth
+ * nudge needed 1,032K of a 1,048K window, and nothing came until the window was full. The last
+ * nudge goes out when the window enters the final `nudgeGrowthTokens`, once, and a fold re-arms it.
+ */
+test("§7a: the last nudge comes when the window enters its final step, once, and a fold re-arms it", () => {
+	const handlers: Record<string, ((event: unknown, ctx: unknown) => unknown)[]> = {};
+	const sent: boolean[] = [];
+	const pi = {
+		on: (name: string, handler: (event: unknown, ctx: unknown) => unknown) => {
+			handlers[name] = [...(handlers[name] ?? []), handler];
+		},
+		registerTool: () => {},
+		registerMessageRenderer: () => {},
+		appendEntry: () => {},
+		sendMessage: (_message: unknown, options: { triggerTurn: boolean }) => sent.push(options.triggerTurn),
+	};
+	contextFold(pi as never);
+	let tokens = 0;
+	const ctx = {
+		getContextUsage: () => ({ tokens, contextWindow: 1_048_576 }),
+		ui: { setStatus: () => {} },
+		sessionManager: {
+			getBranch: () => [],
+			buildContextEntries: () => [],
+			buildSessionProjection: () => ({ entries: [] }),
+			getSessionId: () => "s",
+		},
+	};
+	const turnEnd = (at: number) => {
+		tokens = at;
+		for (const handler of handlers.turn_end ?? [])
+			handler({ message: { role: "assistant", content: [{ type: "text", text: "done" }] } }, ctx);
+	};
+
+	turnEnd(832_000);
+	assert.deepEqual(sent, [false], "an ordinary growth nudge at 832K");
+	turnEnd(840_000);
+	assert.deepEqual(sent, [false], "208K left: not yet in the final step");
+	turnEnd(860_000);
+	assert.deepEqual(sent, [false, true], "under 200K left: the last nudge, with a turn of its own");
+	turnEnd(900_000);
+	turnEnd(1_000_000);
+	assert.deepEqual(sent, [false, true], "the last nudge is sent once");
+	turnEnd(500_000);
+	turnEnd(870_000);
+	assert.deepEqual(sent, [false, true, true], "a fold out of the final step re-arms it");
+});

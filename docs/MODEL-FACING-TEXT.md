@@ -519,8 +519,9 @@ drift from the number that produces it — including when it is not 200K.
 
 ### 7a. The last nudge
 
-A nudge needs 200K of growth to fire, so once the window has less than that left, no second
-nudge can arrive before the overflow cut. That one is a warning, and it says so. It is the
+A growth nudge needs 200K of growth to fire, so once the window has less than that left, no
+growth nudge can arrive before the overflow cut. The last nudge is sent as soon as that happens,
+whatever the growth since the previous nudge. It is a warning, and it says so. It is the
 only nudge that starts a turn of its own, because there may be no ordinary turn left in which
 to act on it. It is a steer: sent mid-task, the model reads it at its very next
 call, folds, and goes on with your work; sent on the final answer, it keeps the run going for the

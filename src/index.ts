@@ -117,11 +117,13 @@ function nudge(pi: ExtensionAPI, ctx: ExtensionContext, state: FoldState, config
 	}
 	const step = config.nudgeGrowthTokens;
 	const growth = predicted - state.baseline;
-	if (growth < step) return;
+	// With less than `nudgeGrowthTokens` left in the window, no growth nudge can arrive before the
+	// overflow cut, so the last reminder goes out as soon as the window enters that zone, whatever
+	// the growth: waiting for growth sent nothing from 832K until the window was full (§8). Once
+	// only: after it the baseline sits in the zone, and a fold that leaves the zone re-arms it.
+	const last = usage.contextWindow - predicted < step && usage.contextWindow - state.baseline >= step;
+	if (growth < step && !last) return;
 
-	// A nudge needs `nudgeGrowthTokens` of growth to fire, so with less than that left in the window
-	// there is no room for another one: this is the last reminder before the context runs out (§7).
-	const last = usage.contextWindow - predicted < step;
 	// A turn of its own only for the last nudge, which has to be acted on before the next overflow.
 	// An ordinary nudge reports and waits: it is read at the start of the next turn either way, and
 	// waking the model to tell it that nothing is required costs a model call for nothing.
