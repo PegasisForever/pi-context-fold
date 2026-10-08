@@ -586,13 +586,14 @@ model is sent changes (C6).
 There is no benefit floor. The model decides which span is worth folding; we only decide
 when to ask.
 
-**The nudge asks for a fold, and leaves the span to the model.** It fires only after
-`nudgeGrowthTokens` of growth, and a context that size always holds finished work, so it says
-so: *"A context this large holds finished work … Find the largest chunk of it and compact it,
-then carry on with the work."* It used to be a report the model could decline (*"If nothing
-qualifies, carry on with the work"*), and Medi GPT (Gemini, 2026-10-08) declined all four, at
-219K, 425K, 626K and 832K, then overflowed a 1,048K window. A summary written over live work
-still costs more than it saves, which is why the span stays the model's choice.
+**Up to half the window the nudge is a report, not an order; over half it asks for a fold.**
+The report hands the decision back, in as many words: *"If nothing qualifies, carry on with the
+work."* A nudge that demands a fold gets one whether or not anything is finished, and a summary
+written over live work costs more than it saves. Over half the window a context always holds
+finished work, so the nudge says so: *"A context this large holds finished work … Find the
+largest chunk of it and compact it, then carry on with the work."* Medi GPT (Gemini, 2026-10-08)
+declined all four report-form nudges, at 219K, 425K, 626K and 832K, then overflowed a 1,048K
+window. Either way the span stays the model's choice.
 
 **What the nudge carries is what the decision needs**: what qualifies as finished work. That
 was in the menu until now, which put it behind a 5.4K tool call the model had to pay before it

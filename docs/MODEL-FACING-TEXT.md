@@ -485,11 +485,24 @@ find again by parsing, without a regex over prose.
 
 ## 7. The nudge
 
-At most twice a day on this workload. Appended at the end of the view. **It asks for a fold,
-and leaves the span to the model**: a nudge fires only after 200K of growth, and a context that
-size always holds finished work, so the question is which span, not whether. Which span is a
-judgement only the model can make from the work in front of it, and a summary written over live
-work costs more than the tokens it saves.
+At most twice a day on this workload. Appended at the end of the view. Up to half the window
+**it is a report, not an order**: whether anything is worth folding is a judgement only the
+model can make from the work in front of it, and a summary written over live work costs more
+than the tokens it saves.
+
+```
+<pi-context-fold>
+This is a reminder that you handle the context compaction yourself. 420K of 1.0M context used. You will be reminded again after another 200K of growth.
+
+Compacting keeps the context lean which helps you to perform better. The compacted range and the summary are yours to decide.
+Compact if there is a large chunk of finished work in the way: exploration that led nowhere, tool output you have already used, a phase whose result is recorded. If nothing qualifies, carry on with the work.
+
+To compact, call `compact()` with no arguments to list the spans and the summary writing instructions, then choose the span to compact.
+</pi-context-fold>
+```
+
+**Over half the window it asks for a fold, and leaves the span to the model**: a context that
+size always holds finished work, so the question is which span, not whether.
 
 ```
 <pi-context-fold>
@@ -508,13 +521,13 @@ model can pick a span before it pays for the 5.4K menu call. It does **not** sta
 own: sent while the model is running, it is read at the model's next call; sent at the end of a
 run, at the start of the next one.
 
-The nudge used to end *"If nothing qualifies, carry on with the work"*, a report the model could
-decline. Medi GPT (Gemini, 2026-10-08) declined four of them, at 219K, 425K, 626K and 832K, and
-filled a 1,048K window without one fold. So it now says that finished work is there and asks for
-the largest chunk, then for the work to go on. It still does not start a turn: it is read at the
-next call, where the model folds before it continues. *"The compacted range and the summary are
-yours to decide"* keeps the span the model's, in the system prompt's words (§1) — one constant
-in the code, so the two cannot drift.
+*"If nothing qualifies, carry on with the work"* keeps the first form a report: §7a and §7b are
+messages the model must act on, and a report that looks like those gets acted on too. Over half
+the window the second form asks for the largest chunk of finished work instead. Medi GPT
+(Gemini, 2026-10-08) declined all four report-form nudges, at 219K, 425K, 626K and 832K, and
+filled a 1,048K window without one fold. Neither form starts a turn: each is read at the next
+call. *"The compacted range and the summary are yours to decide"* keeps the span the model's,
+in the system prompt's words (§1) — one constant in the code, so the two cannot drift.
 
 The 200K figure is interpolated from the configured `nudgeGrowthTokens`, so the sentence cannot
 drift from the number that produces it — including when it is not 200K.

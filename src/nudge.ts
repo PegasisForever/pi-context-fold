@@ -13,7 +13,8 @@ export { NAME };
 export const NUDGE_GROWTH_TOKENS = 200_000;
 
 /**
- * MODEL-FACING-TEXT.md §7. `growth` is the ordinary reminder, which waits for the next turn; `last`
+ * MODEL-FACING-TEXT.md §7. `growth` is the ordinary reminder, which waits for the next turn and asks
+ * for the fold outright once over half the window is used; `last`
  * is §7a, the one sent when no second reminder can fire; `manual` is §7b, the answer to `/compact`.
  * The last two start a turn of their own when the model is idle: something has to happen before the
  * window fills, or because you pressed a key. While it runs, all three are read at its next call.
@@ -39,10 +40,12 @@ export function sendNudge(pi: ExtensionAPI, ctx: ExtensionContext, kind: NudgeKi
 			? undefined
 			: `${shortTokens(usage.tokens)} of ${shortTokens(usage.contextWindow)} context used.`;
 	const lines = kind === "last" ? ["Last reminder before the context runs out."] : [];
+	// Over half the window, a growth nudge asks for the fold instead of offering to skip it (§7).
+	const full = usage !== undefined && usage.tokens !== null && usage.tokens * 2 > usage.contextWindow;
 	pi.sendMessage<NudgeDetails>(
 		{
 			customType: NAME,
-			content: `<${NAME}>\n${nudgeText(kind, used, growth)}\n</${NAME}>`,
+			content: `<${NAME}>\n${nudgeText(kind, used, growth, full)}\n</${NAME}>`,
 			details: { lines: used === undefined ? lines : [used, ...lines], kind },
 			display: true,
 		},
@@ -57,14 +60,16 @@ export function sendNudge(pi: ExtensionAPI, ctx: ExtensionContext, kind: NudgeKi
  * change to one wording is a change to every message that says it. `used` is left out when Pi does
  * not know the context size; §7b never states it, because the user asked and the number is not
  * what the request is about. */
-function nudgeText(kind: NudgeKind, used: string | undefined, growth: number): string {
+function nudgeText(kind: NudgeKind, used: string | undefined, growth: number, full: boolean): string {
 	const how = `\`compact()\` with no arguments to list the spans and the summary writing instructions, then choose the span to compact.`;
 	const reminder = (next: string) => [REMINDER, used, next].filter(Boolean).join(" ");
 	switch (kind) {
 		case "growth":
 			return [
 				reminder(`You will be reminded again after another ${shortTokens(growth)} of growth.`),
-				`${WHY}\nA context this large holds finished work: ${FINISHED} Find the largest chunk of it and compact it, then carry on with the work.`,
+				full
+					? `${WHY}\nA context this large holds finished work: ${FINISHED} Find the largest chunk of it and compact it, then carry on with the work.`
+					: `${WHY}\nCompact if there is a large chunk of finished work in the way: ${FINISHED} If nothing qualifies, carry on with the work.`,
 				`To compact, call ${how}`,
 			].join("\n\n");
 		case "last":

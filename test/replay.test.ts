@@ -401,7 +401,7 @@ test("MODEL-FACING-TEXT.md §4, §4b and §6: the success result, the receipt an
  * MODEL-FACING-TEXT.md §7, §7a and §7b, sent through the real sender with the document's own
  * numbers. The nudges went untested once, and the code and the document drifted by a word.
  */
-test("MODEL-FACING-TEXT.md §7, §7a and §7b: the three nudges are the document's, and only §7 waits", () => {
+test("MODEL-FACING-TEXT.md §7, §7a and §7b: the nudges are the document's, and only §7 waits", () => {
 	const sent: { content: string; triggerTurn: boolean; deliverAs?: string }[] = [];
 	const pi = {
 		sendMessage: (message: { content: string }, options: { triggerTurn: boolean; deliverAs?: string }) =>
@@ -410,25 +410,27 @@ test("MODEL-FACING-TEXT.md §7, §7a and §7b: the three nudges are the document
 	const at = (tokens: number | null) => ({
 		getContextUsage: () => ({ tokens, contextWindow: 1_000_000 }),
 	});
+	sendNudge(pi as never, at(420_000) as never, "growth", NUDGE_GROWTH_TOKENS);
 	sendNudge(pi as never, at(640_000) as never, "growth", NUDGE_GROWTH_TOKENS);
 	sendNudge(pi as never, at(910_000) as never, "last", NUDGE_GROWTH_TOKENS);
 	// §7b: Pi does not know the size right after a compaction, and the request never states it.
 	sendNudge(pi as never, at(null) as never, "manual", NUDGE_GROWTH_TOKENS);
 	sendNudge(pi as never, at(640_000) as never, "manual", NUDGE_GROWTH_TOKENS);
 
-	assert.equal(sent[0]?.content, fenced("7", 0));
-	assert.equal(sent[1]?.content, fenced("7", 1));
+	assert.equal(sent[0]?.content, fenced("7", 0), "up to half the window: the report");
+	assert.equal(sent[1]?.content, fenced("7", 1), "over half the window: the request for a fold");
 	assert.equal(sent[2]?.content, fenced("7", 2));
-	assert.equal(sent[3]?.content, fenced("7", 2), "the request must not change with the size");
+	assert.equal(sent[3]?.content, fenced("7", 3));
+	assert.equal(sent[4]?.content, fenced("7", 3), "the request must not change with the size");
 	assert.deepEqual(
 		sent.map((one) => one.triggerTurn),
-		[false, true, true, true],
+		[false, false, true, true, true],
 	);
 	// The last nudge and the request are steers, so neither waits for the model to stop. Pi reads
 	// no delivery option for the growth reminder, which starts nothing, so it has none.
 	assert.deepEqual(
 		sent.map((one) => one.deliverAs),
-		[undefined, "steer", "steer", "steer"],
+		[undefined, undefined, "steer", "steer", "steer"],
 	);
 });
 
