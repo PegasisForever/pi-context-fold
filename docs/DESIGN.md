@@ -583,19 +583,20 @@ the live failure this answers. No span mapping and no new record: creation order
 spontaneous fold retires the same way. The session log and the TUI keep everything; only what the
 model is sent changes (C6).
 
-There is no benefit floor. The model decides whether a fold is worth making; we only decide
+There is no benefit floor. The model decides which span is worth folding; we only decide
 when to ask.
 
-**The nudge is 165 tokens, and it is a report, not an order.** It states the pressure and
-hands the decision back, in as many words: *"If nothing qualifies, carry on with the work."*
-That is the same rule as the paragraph above — the model decides whether a fold is worth
-making — applied to the text instead of only to the code. A nudge that demands a fold gets one
-whether or not anything is finished, and a summary written over live work costs more than it
-saves.
+**The nudge asks for a fold, and leaves the span to the model.** It fires only after
+`nudgeGrowthTokens` of growth, and a context that size always holds finished work, so it says
+so: *"A context this large holds finished work … Find the largest chunk of it and compact it,
+then carry on with the work."* It used to be a report the model could decline (*"If nothing
+qualifies, carry on with the work"*), and Medi GPT (Gemini, 2026-10-08) declined all four, at
+219K, 425K, 626K and 832K, then overflowed a 1,048K window. A summary written over live work
+still costs more than it saves, which is why the span stays the model's choice.
 
-**What the nudge carries is what the decision needs**: what qualifies, and that declining is
-allowed. Those were in the menu until now, which put them behind a 5.4K tool call the model had
-to pay before it could tell whether it wanted to make it. What stays in the menu is what the
+**What the nudge carries is what the decision needs**: what qualifies as finished work. That
+was in the menu until now, which put it behind a 5.4K tool call the model had to pay before it
+could tell what to fold. What stays in the menu is what the
 *next* decision needs — which span, and what the summary must contain (§17, row 19.67). That
 nothing is destroyed moved the other way, into the system prompt, because it is still true after
 the menu has left the view. Neither text is duplicated; exact text is in
@@ -626,7 +627,7 @@ holds until the model stops — so the warning that the window is about to run o
 however much work was left, and the fold always landed after your task instead of inside it
 (§17, row 19.84). The first version woke the model on every nudge, on the grounds that a queued nudge leaves the
 fold undone until the user happens to type. That argument holds for a message the model must
-act on and no longer holds for one it may ignore: waking it to say that nothing is required
+act on at once and no longer holds for one it reads at its next call anyway: waking it for that
 spends a model call on nothing. pi-background wakes the model for a finished background job
 and still should — the user is waiting on that result. Nobody is waiting on this one.
 
@@ -651,8 +652,8 @@ clash itself and demotes the extension's command
 It used to fall into the mechanical cut below, which means typing `/compact` out of habit threw
 half the session out of view with no summary. It now cancels Pi's compaction and tells the model
 that you asked for a compaction, and the model chooses the range and writes the summaries. It is
-its own message, not the ordinary nudge: the nudge is about growth and says the model may decline,
-and pressing the key is neither. It is not the last nudge either — pressing the key says *now*,
+its own message, not the ordinary nudge: the nudge is about growth, and pressing the key is not
+growth. It is not the last nudge either — pressing the key says *now*,
 not *there is an emergency*. It is sent with `triggerTurn: true`, because you pressed a key and
 something has to happen (§17, rows 19.73 and 19.80). **That run ends when the fold lands**: the
 folding call returns `terminate: true` when the run exists only to compact, so Pi makes no

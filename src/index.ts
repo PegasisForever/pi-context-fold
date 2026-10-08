@@ -125,8 +125,8 @@ function nudge(pi: ExtensionAPI, ctx: ExtensionContext, state: FoldState, config
 	if (growth < step && !last) return;
 
 	// A turn of its own only for the last nudge, which has to be acted on before the next overflow.
-	// An ordinary nudge reports and waits: it is read at the start of the next turn either way, and
-	// waking the model to tell it that nothing is required costs a model call for nothing.
+	// An ordinary nudge waits: it is read at the model's next call either way, and waking the model
+	// only to deliver it sooner costs a model call for nothing.
 	sendNudge(pi, ctx, last ? "last" : "growth", step);
 	state.baseline = predicted;
 	log("nudge", { predicted, growth, step, last });

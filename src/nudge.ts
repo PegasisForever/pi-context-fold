@@ -64,7 +64,7 @@ function nudgeText(kind: NudgeKind, used: string | undefined, growth: number): s
 		case "growth":
 			return [
 				reminder(`You will be reminded again after another ${shortTokens(growth)} of growth.`),
-				`${WHY}\nCompact if there is a large chunk of finished work in the way: ${FINISHED} If nothing qualifies, carry on with the work.`,
+				`${WHY}\nA context this large holds finished work: ${FINISHED} Find the largest chunk of it and compact it, then carry on with the work.`,
 				`To compact, call ${how}`,
 			].join("\n\n");
 		case "last":

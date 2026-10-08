@@ -16,8 +16,8 @@ Every string this extension puts in front of the model. Companion to
 | Menu | only when asked, **mandatory before any fold** | ~5.4K tok | the entries, and what picking a span and writing a summary need (§3a) |
 
 The folding guidance is split by the decision it serves. **Whether to compact at all** is
-decided before the menu is called, so what that decision needs is in the nudge: what qualifies,
-and that the model may decline. **Which span, and what the summary must say** is decided with the
+decided before the menu is called, so what that decision needs is in the nudge: what qualifies
+as finished work. **Which span, and what the summary must say** is decided with the
 table in front of the model, so it stays in the menu, paid only when a fold is actually
 happening. That nothing is destroyed is in the system prompt, because it is still true after the
 menu is gone (P7). §3c has the reasoning, and what the split costs.
@@ -485,34 +485,36 @@ find again by parsing, without a regex over prose.
 
 ## 7. The nudge
 
-At most twice a day on this workload. Appended at the end of the view. **It is a report, not
-an order**: pressure is a fact about the session, and whether any of it is worth folding is a
-judgement only the model can make from the work in front of it. A nudge that demands a fold
-gets one whether or not anything is finished, and a summary written over live work costs more
-than the tokens it saves.
+At most twice a day on this workload. Appended at the end of the view. **It asks for a fold,
+and leaves the span to the model**: a nudge fires only after 200K of growth, and a context that
+size always holds finished work, so the question is which span, not whether. Which span is a
+judgement only the model can make from the work in front of it, and a summary written over live
+work costs more than the tokens it saves.
 
 ```
 <pi-context-fold>
 This is a reminder that you handle the context compaction yourself. 640K of 1.0M context used. You will be reminded again after another 200K of growth.
 
 Compacting keeps the context lean which helps you to perform better. The compacted range and the summary are yours to decide.
-Compact if there is a large chunk of finished work in the way: exploration that led nowhere, tool output you have already used, a phase whose result is recorded. If nothing qualifies, carry on with the work.
+A context this large holds finished work: exploration that led nowhere, tool output you have already used, a phase whose result is recorded. Find the largest chunk of it and compact it, then carry on with the work.
 
 To compact, call `compact()` with no arguments to list the spans and the summary writing instructions, then choose the span to compact.
 </pi-context-fold>
 ```
 
-**165 tokens**, measured, up from 43. The extra 122 buy the decision itself: without them the
-model cannot tell whether compacting is worth a 5.4K menu call, and the cheapest way to find out
-is to make the call. It does **not** start a turn of its own: sent while the model is running,
-it is read at the model's next call; sent at the end of a run, at the start of the next one.
-Waking the model to tell it that nothing is required spends a model call on nothing.
+**About 165 tokens** (measured before the 2026-10-08 wording, which is the same length to within a
+few words), up from 43. The extra buy the decision itself: what counts as finished work, so the
+model can pick a span before it pays for the 5.4K menu call. It does **not** start a turn of its
+own: sent while the model is running, it is read at the model's next call; sent at the end of a
+run, at the start of the next one.
 
-*"If nothing qualifies, carry on with the work"* is the one sentence that has to be there. It is
-what keeps this a report: §7a and §7b are messages the model must act on, and a report that looks
-like those gets acted on too. *"The compacted range and the summary are yours to decide"* says the
-same thing from the other side, in the system prompt's words (§1) — one constant in the code, so
-the two cannot drift.
+The nudge used to end *"If nothing qualifies, carry on with the work"*, a report the model could
+decline. Medi GPT (Gemini, 2026-10-08) declined four of them, at 219K, 425K, 626K and 832K, and
+filled a 1,048K window without one fold. So it now says that finished work is there and asks for
+the largest chunk, then for the work to go on. It still does not start a turn: it is read at the
+next call, where the model folds before it continues. *"The compacted range and the summary are
+yours to decide"* keeps the span the model's, in the system prompt's words (§1) — one constant
+in the code, so the two cannot drift.
 
 The 200K figure is interpolated from the configured `nudgeGrowthTokens`, so the sentence cannot
 drift from the number that produces it — including when it is not 200K.
@@ -537,8 +539,8 @@ Compact as soon as possible. Call `compact()` with no arguments to list the span
 </pi-context-fold>
 ```
 
-**123 tokens**, measured — shorter than the ordinary nudge, because everything that helps the
-model decline is gone. It keeps what counts as finished work, the same list as §7, because an
+**123 tokens**, measured — shorter than the ordinary nudge, because it drops the reasons to
+compact and asks for the fold at once. It keeps what counts as finished work, the same list as §7, because an
 urgent fold is still a fold of finished work. What happens next, in full, is §8.
 
 ### 7b. `/compact`, the key we cannot delete
@@ -547,8 +549,8 @@ Pi's own `/compact` cannot be removed by an extension and cannot be shadowed by 
 stays and we choose what it does: it cancels Pi's compaction and sends **a request of its own**,
 with a turn of its own.
 
-Not the ordinary nudge: that one is a reminder about growth and says the model may decline, and
-you pressing the key is neither. The request says who asked, and keeps the decision about *what*
+Not the ordinary nudge: that one is a reminder about growth, and you pressing the key is not
+growth. The request says who asked, and keeps the decision about *what*
 to compact with the model — the range and the summary are still its call. Not §7a either: that
 one says the session is about to run out, and pressing the key says nothing about that.
 
